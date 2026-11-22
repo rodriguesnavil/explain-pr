@@ -1,0 +1,174 @@
+diff --git a/package-lock.json b/package-lock.json
+index 4c1ded6..6400a40 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -3,6 +3,7 @@
+   "lockfileVersion": 3,
+   "packages": {
+     "node_modules/express": { "version": "4.19.2" },
++    "node_modules/ioredis": { "version": "5.4.1" },
+     "node_modules/pg": { "version": "8.11.0" }
+   }
+ }
+diff --git a/package.json b/package.json
+index 2de1204..1863f34 100644
+--- a/package.json
++++ b/package.json
+@@ -3,6 +3,7 @@
+   "version": "1.0.0",
+   "dependencies": {
+     "express": "^4.19.2",
++    "ioredis": "^5.4.1",
+     "pg": "^8.11.0"
+   }
+ }
+diff --git a/src/cache/redisCache.js b/src/cache/redisCache.js
+new file mode 100644
+index 0000000..d31af23
+--- /dev/null
++++ b/src/cache/redisCache.js
+@@ -0,0 +1,19 @@
++const Redis = require('ioredis')
++
++const redis = new Redis(process.env.REDIS_URL)
++const TTL_SECONDS = 300
++
++async function get(key) {
++  const raw = await redis.get(key)
++  return raw ? JSON.parse(raw) : null
++}
++
++async function set(key, value) {
++  await redis.set(key, JSON.stringify(value), 'EX', TTL_SECONDS)
++}
++
++async function del(key) {
++  await redis.del(key)
++}
++
++module.exports = { get, set, del }
+diff --git a/src/repositories/orderRepository.js b/src/repositories/orderRepository.js
+new file mode 100644
+index 0000000..98e724c
+--- /dev/null
++++ b/src/repositories/orderRepository.js
+@@ -0,0 +1,16 @@
++const db = require('../db')
++
++async function findById(id) {
++  const { rows } = await db.query('SELECT * FROM orders WHERE id = $1', [id])
++  return rows[0] || null
++}
++
++async function create({ customerId, items, total }) {
++  const { rows } = await db.query(
++    'INSERT INTO orders (customer_id, items, total) VALUES ($1, $2, $3) RETURNING *',
++    [customerId, JSON.stringify(items), total]
++  )
++  return rows[0]
++}
++
++module.exports = { findById, create }
+diff --git a/src/routes/orders.js b/src/routes/orders.js
+index 70e77b4..c90c57a 100644
+--- a/src/routes/orders.js
++++ b/src/routes/orders.js
+@@ -1,22 +1,22 @@
+ const express = require('express')
+-const db = require('../db')
++const orders = require('../services/orderService')
+ 
+ const router = express.Router()
+ 
+ router.get('/:id', async (req, res) => {
+-  const { rows } = await db.query('SELECT * FROM orders WHERE id = $1', [req.params.id])
+-  if (!rows.length) return res.status(404).json({ error: 'not found' })
+-  res.json(rows[0])
++  const order = await orders.getOrder(req.params.id)
++  if (!order) return res.status(404).json({ error: 'not found' })
++  res.json(order)
+ })
+ 
+-router.post('/', async (req, res) => {
+-  const { customerId, items } = req.body
+-  const total = items.reduce((sum, i) => sum + i.price * i.qty, 0)
+-  const { rows } = await db.query(
+-    'INSERT INTO orders (customer_id, items, total) VALUES ($1, $2, $3) RETURNING *',
+-    [customerId, JSON.stringify(items), total]
+-  )
+-  res.status(201).json(rows[0])
++router.post('/', async (req, res, next) => {
++  try {
++    const order = await orders.placeOrder(req.body)
++    res.status(201).json(order)
++  } catch (err) {
++    if (err.status === 400) return res.status(400).json({ error: err.message })
++    next(err)
++  }
+ })
+ 
+ module.exports = router
+diff --git a/src/services/orderService.js b/src/services/orderService.js
+new file mode 100644
+index 0000000..5ccdbfd
+--- /dev/null
++++ b/src/services/orderService.js
+@@ -0,0 +1,24 @@
++const repo = require('../repositories/orderRepository')
++const cache = require('../cache/redisCache')
++
++const key = (id) => `order:${id}`
++
++async function getOrder(id) {
++  const cached = await cache.get(key(id))
++  if (cached) return cached
++  const order = await repo.findById(id)
++  if (order) await cache.set(key(id), order)
++  return order
++}
++
++async function placeOrder({ customerId, items }) {
++  if (!Array.isArray(items) || items.length === 0) {
++    const err = new Error('an order needs at least one item')
++    err.status = 400
++    throw err
++  }
++  const total = items.reduce((sum, i) => sum + i.price * i.qty, 0)
++  return repo.create({ customerId, items, total })
++}
++
++module.exports = { getOrder, placeOrder }
+diff --git a/docs/architecture.md b/docs/architecture.md
+new file mode 100644
+index 0000000..1941e68
+--- /dev/null
++++ b/docs/architecture.md
+@@ -0,0 +1,5 @@
++# Architecture
++
++Request → route → service → repository → Postgres.
++
++Order reads are cached in Redis for 5 minutes (`REDIS_URL`).
+diff --git a/test/orderService.test.js b/test/orderService.test.js
+new file mode 100644
+index 0000000..27b85eb
+--- /dev/null
++++ b/test/orderService.test.js
+@@ -0,0 +1,17 @@
++const assert = require('node:assert')
++const { test, mock } = require('node:test')
++
++test('getOrder returns the cached order without touching the repository', async () => {
++  const cache = require('../src/cache/redisCache')
++  const repo = require('../src/repositories/orderRepository')
++  mock.method(cache, 'get', async () => ({ id: 1 }))
++  const find = mock.method(repo, 'findById', async () => null)
++  const { getOrder } = require('../src/services/orderService')
++  assert.deepStrictEqual(await getOrder(1), { id: 1 })
++  assert.strictEqual(find.mock.callCount(), 0)
++})
++
++test('placeOrder rejects an empty order', async () => {
++  const { placeOrder } = require('../src/services/orderService')
++  await assert.rejects(placeOrder({ customerId: 1, items: [] }), /at least one item/)
++})

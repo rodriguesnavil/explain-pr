@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "source": "local",
+  "mode": "branch",
+  "repo": "acme-orders",
+  "repoRoot": "/path/to/acme-orders",
+  "branch": "feature/order-service-layer",
+  "title": "Move order logic into a service and repository; cache reads in Redis",
+  "body": "",
+  "base": {
+    "ref": "main",
+    "sha": "a0d23bb524cf8a564d0d8f5fbd0fb912eb4fe0f0"
+  },
+  "head": {
+    "ref": "feature/order-service-layer (working tree)",
+    "sha": "4f43a1759e51b52cbb9a9d04dc6b88c58c13c7d7"
+  },
+  "commits": [
+    {
+      "sha": "4f43a17",
+      "subject": "Move order logic into a service and repository; cache reads in Redis",
+      "body": "Routes now call orderService. Reads go through a 5-minute Redis cache. Empty orders are rejected with 400."
+    }
+  ],
+  "linkedIssues": [],
+  "contextFiles": [
+    {
+      "path": "CLAUDE.md"
+    },
+    {
+      "path": "docs/architecture.md"
+    }
+  ],
+  "config": null,
+  "stats": {
+    "files": 8,
+    "add": 95,
+    "del": 12
+  },
+  "files": [
+    {
+      "path": "package-lock.json",
+      "status": "modified",
+      "add": 1,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "package.json",
+      "status": "modified",
+      "add": 1,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "src/cache/redisCache.js",
+      "status": "added",
+      "add": 19,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "src/repositories/orderRepository.js",
+      "status": "added",
+      "add": 16,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "src/routes/orders.js",
+      "status": "modified",
+      "add": 12,
+      "del": 12,
+      "hunks": 1
+    },
+    {
+      "path": "src/services/orderService.js",
+      "status": "added",
+      "add": 24,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "docs/architecture.md",
+      "status": "added",
+      "add": 5,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "test/orderService.test.js",
+      "status": "added",
+      "add": 17,
+      "del": 0,
+      "hunks": 1
+    }
+  ],
+  "workDir": "<tmp>/explain-pr/acme-orders-feature-order-service-layer",
+  "slug": "acme-orders-feature-order-service-layer",
+  "generatedAt": "2026-11-22T17:43:47.760Z"
+}

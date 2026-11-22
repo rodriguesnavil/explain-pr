@@ -1,0 +1,6 @@
+explain-pr
+Copyright (c) 2026 rodriguesnavil. Licensed under the MIT License (see LICENSE).
+
+plugins/explain-pr/skills/explain-pr/examples/starlette-3435/pr.diff is the diff of
+encode/starlette pull request #3435, (c) the Starlette contributors, under the
+BSD-3-Clause licence (https://github.com/encode/starlette/blob/main/LICENSE.md).

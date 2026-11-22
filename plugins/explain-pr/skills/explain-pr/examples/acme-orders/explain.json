@@ -1,0 +1,823 @@
+{
+  "version": 1,
+  "summary": "Order requests now go route → service → repository, and reading an order is served from a 5-minute Redis cache before Postgres is asked.",
+  "overview": "The routes stop running SQL themselves. Business rules (the total, the new empty-order check) move into `orderService`, SQL moves into `orderRepository`, and reads are cached in Redis. Redis becomes a new runtime dependency for GET /orders/:id.",
+  "kind": "refactor",
+  "effort": {
+    "score": 2,
+    "why": "Six small files; the moving parts are the new layering and the cache."
+  },
+  "intent": {
+    "source": "commit messages",
+    "checks": [
+      {
+        "claim": "Routes now call `orderService`",
+        "status": "matches",
+        "note": "`src/routes/orders.js` imports only ../services/orderService."
+      },
+      {
+        "claim": "Reads go through a 5-minute Redis cache",
+        "status": "matches",
+        "note": "`TTL_SECONDS = 300` in `redisCache.js`; only `getOrder` reads the cache."
+      },
+      {
+        "claim": "Empty orders are rejected with 400",
+        "status": "matches",
+        "note": "Also a body with no items array at all now gets 400; before, it threw on `items.reduce`."
+      }
+    ]
+  },
+  "architecture": {
+    "summary": "A classic three-layer split replaces route-level SQL, and a cache sits between the service and the database. The layering matches what CLAUDE.md asks for.",
+    "impact": [
+      {
+        "kind": "module",
+        "change": "added",
+        "title": "Service layer: orderService",
+        "detail": "Owns `getOrder` and `placeOrder`, including the order total and the empty-order rule.",
+        "files": [
+          "src/services/orderService.js"
+        ]
+      },
+      {
+        "kind": "module",
+        "change": "added",
+        "title": "Repository layer: orderRepository",
+        "detail": "The same two SQL statements the route used to run, now behind `findById` and create.",
+        "files": [
+          "src/repositories/orderRepository.js"
+        ]
+      },
+      {
+        "kind": "dependency",
+        "change": "added",
+        "title": "Redis via ioredis",
+        "detail": "New runtime dependency, configured by `REDIS_URL`. GET /orders/:id now needs Redis reachable.",
+        "files": [
+          "src/cache/redisCache.js",
+          "package.json"
+        ]
+      },
+      {
+        "kind": "boundary",
+        "change": "removed",
+        "title": "Routes no longer touch the database",
+        "detail": "The direct import of `src/db.js` from the route is gone.",
+        "files": [
+          "`src/routes/orders.js`"
+        ]
+      },
+      {
+        "kind": "config",
+        "change": "added",
+        "title": "New env var REDIS_URL",
+        "detail": "Read once at startup when `redisCache.js` is loaded.",
+        "files": [
+          "src/cache/redisCache.js"
+        ]
+      }
+    ],
+    "conventions": [
+      {
+        "source": "CLAUDE.md",
+        "rule": "Routes must never import `src/db.js` directly",
+        "status": "follows",
+        "note": "Before this change the route did exactly that; now it doesn't."
+      },
+      {
+        "source": "CLAUDE.md",
+        "rule": "Business rules live in src/services/, data access in src/repositories/",
+        "status": "follows",
+        "note": "The total and the new validation are in the service; SQL is in the repository."
+      },
+      {
+        "source": "CLAUDE.md",
+        "rule": "New infrastructure dependencies need a note in `docs/architecture.md`",
+        "status": "follows",
+        "note": "`docs/architecture.md` mentions Redis, but the file is still untracked: it is not committed yet."
+      },
+      {
+        "source": "(no rule)",
+        "rule": "Caching layer called from services",
+        "status": "new",
+        "note": "First cache in the codebase; nothing documents where caching may live."
+      }
+    ],
+    "diagram": {
+      "title": "Order request path",
+      "layers": [
+        {
+          "id": "http",
+          "label": "HTTP"
+        },
+        {
+          "id": "domain",
+          "label": "Domain"
+        },
+        {
+          "id": "data",
+          "label": "Data"
+        },
+        {
+          "id": "infra",
+          "label": "Infrastructure"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "routes",
+          "label": "routes/orders.js",
+          "kind": "api",
+          "layer": "http",
+          "status": "changed",
+          "detail": "Now only parses the request and calls the service.",
+          "files": [
+            "src/routes/orders.js"
+          ]
+        },
+        {
+          "id": "service",
+          "label": "orderService",
+          "kind": "service",
+          "layer": "domain",
+          "status": "added",
+          "detail": "getOrder (cache first), placeOrder (validates, totals).",
+          "files": [
+            "src/services/orderService.js"
+          ]
+        },
+        {
+          "id": "repo",
+          "label": "orderRepository",
+          "kind": "module",
+          "layer": "data",
+          "status": "added",
+          "detail": "findById, create.",
+          "files": [
+            "src/repositories/orderRepository.js"
+          ]
+        },
+        {
+          "id": "cache",
+          "label": "redisCache",
+          "kind": "module",
+          "layer": "data",
+          "status": "added",
+          "detail": "get/set/del with a 300 s TTL.",
+          "files": [
+            "src/cache/redisCache.js"
+          ]
+        },
+        {
+          "id": "db",
+          "label": "db.js (pg pool)",
+          "kind": "module",
+          "layer": "data",
+          "status": "same",
+          "files": [
+            "src/db.js"
+          ]
+        },
+        {
+          "id": "pg",
+          "label": "Postgres",
+          "kind": "db",
+          "layer": "infra",
+          "status": "same"
+        },
+        {
+          "id": "redis",
+          "label": "Redis",
+          "kind": "db",
+          "layer": "infra",
+          "status": "added",
+          "detail": "New. REDIS_URL."
+        }
+      ],
+      "edges": [
+        {
+          "from": "routes",
+          "to": "db",
+          "label": "SQL in the route",
+          "status": "removed"
+        },
+        {
+          "from": "routes",
+          "to": "service",
+          "status": "added"
+        },
+        {
+          "from": "service",
+          "to": "cache",
+          "label": "read-through",
+          "status": "added"
+        },
+        {
+          "from": "service",
+          "to": "repo",
+          "status": "added"
+        },
+        {
+          "from": "repo",
+          "to": "db",
+          "status": "added"
+        },
+        {
+          "from": "cache",
+          "to": "redis",
+          "status": "added"
+        },
+        {
+          "from": "db",
+          "to": "pg",
+          "status": "same"
+        }
+      ]
+    }
+  },
+  "flows": [
+    {
+      "id": "get",
+      "title": "GET /orders/:id",
+      "description": "Reading one order. The route asks the service, which checks Redis before the database.",
+      "participants": [
+        {
+          "id": "client",
+          "label": "Client"
+        },
+        {
+          "id": "route",
+          "label": "Route"
+        },
+        {
+          "id": "svc",
+          "label": "orderService"
+        },
+        {
+          "id": "redis",
+          "label": "Redis"
+        },
+        {
+          "id": "pg",
+          "label": "Postgres"
+        }
+      ],
+      "cases": [
+        {
+          "id": "miss",
+          "label": "Not in cache",
+          "before": [
+            {
+              "from": "client",
+              "to": "route",
+              "text": "GET /orders/42"
+            },
+            {
+              "from": "route",
+              "to": "pg",
+              "text": "SELECT * FROM orders WHERE id = 42"
+            },
+            {
+              "from": "pg",
+              "to": "route",
+              "text": "row",
+              "reply": true
+            },
+            {
+              "from": "route",
+              "to": "client",
+              "text": "200 order",
+              "reply": true
+            }
+          ],
+          "after": [
+            {
+              "from": "client",
+              "to": "route",
+              "text": "GET /orders/42"
+            },
+            {
+              "from": "route",
+              "to": "svc",
+              "text": "getOrder(42)"
+            },
+            {
+              "from": "svc",
+              "to": "redis",
+              "text": "GET order:42"
+            },
+            {
+              "from": "redis",
+              "to": "svc",
+              "text": "null",
+              "reply": true
+            },
+            {
+              "from": "svc",
+              "to": "pg",
+              "text": "SELECT * FROM orders WHERE id = 42",
+              "note": "via orderRepository.findById"
+            },
+            {
+              "from": "pg",
+              "to": "svc",
+              "text": "row",
+              "reply": true
+            },
+            {
+              "from": "svc",
+              "to": "redis",
+              "text": "SET order:42 EX 300"
+            },
+            {
+              "from": "svc",
+              "to": "route",
+              "text": "order",
+              "reply": true
+            },
+            {
+              "from": "route",
+              "to": "client",
+              "text": "200 order",
+              "reply": true
+            }
+          ],
+          "beforeOutcome": "Every read queried Postgres.",
+          "outcome": "A miss costs one extra Redis round trip and stores the order for 5 minutes."
+        },
+        {
+          "id": "hit",
+          "label": "In cache",
+          "before": [
+            {
+              "from": "client",
+              "to": "route",
+              "text": "GET /orders/42"
+            },
+            {
+              "from": "route",
+              "to": "pg",
+              "text": "SELECT * FROM orders WHERE id = 42"
+            },
+            {
+              "from": "pg",
+              "to": "route",
+              "text": "row",
+              "reply": true
+            },
+            {
+              "from": "route",
+              "to": "client",
+              "text": "200 order",
+              "reply": true
+            }
+          ],
+          "after": [
+            {
+              "from": "client",
+              "to": "route",
+              "text": "GET /orders/42"
+            },
+            {
+              "from": "route",
+              "to": "svc",
+              "text": "getOrder(42)"
+            },
+            {
+              "from": "svc",
+              "to": "redis",
+              "text": "GET order:42"
+            },
+            {
+              "from": "redis",
+              "to": "svc",
+              "text": "cached order",
+              "reply": true
+            },
+            {
+              "from": "svc",
+              "to": "route",
+              "text": "order",
+              "reply": true
+            },
+            {
+              "from": "route",
+              "to": "client",
+              "text": "200 order",
+              "reply": true
+            }
+          ],
+          "beforeOutcome": "Every read queried Postgres.",
+          "outcome": "Postgres is not asked at all; the answer can be up to 5 minutes old."
+        },
+        {
+          "id": "down",
+          "label": "Redis unreachable",
+          "before": [
+            {
+              "from": "client",
+              "to": "route",
+              "text": "GET /orders/42"
+            },
+            {
+              "from": "route",
+              "to": "pg",
+              "text": "SELECT * FROM orders WHERE id = 42"
+            },
+            {
+              "from": "pg",
+              "to": "route",
+              "text": "row",
+              "reply": true
+            },
+            {
+              "from": "route",
+              "to": "client",
+              "text": "200 order",
+              "reply": true
+            }
+          ],
+          "after": [
+            {
+              "from": "client",
+              "to": "route",
+              "text": "GET /orders/42"
+            },
+            {
+              "from": "route",
+              "to": "svc",
+              "text": "getOrder(42)"
+            },
+            {
+              "from": "svc",
+              "to": "redis",
+              "text": "GET order:42"
+            },
+            {
+              "from": "redis",
+              "to": "svc",
+              "text": "connection error",
+              "reply": true,
+              "error": true
+            },
+            {
+              "from": "svc",
+              "to": "route",
+              "text": "throws",
+              "reply": true,
+              "error": true
+            }
+          ],
+          "beforeOutcome": "Redis did not exist; only Postgres mattered.",
+          "outcome": "The read fails even though Postgres is up: nothing catches the cache error. (Unchecked: what the client sees depends on Express error handling.)"
+        }
+      ]
+    },
+    {
+      "id": "post",
+      "title": "POST /orders",
+      "description": "Placing an order. Validation and the total move into the service.",
+      "participants": [
+        {
+          "id": "client",
+          "label": "Client"
+        },
+        {
+          "id": "route",
+          "label": "Route"
+        },
+        {
+          "id": "svc",
+          "label": "orderService"
+        },
+        {
+          "id": "pg",
+          "label": "Postgres"
+        }
+      ],
+      "cases": [
+        {
+          "id": "ok",
+          "label": "Valid order",
+          "before": [
+            {
+              "from": "client",
+              "to": "route",
+              "text": "POST /orders { items }"
+            },
+            {
+              "from": "route",
+              "to": "route",
+              "text": "total = Σ price × qty"
+            },
+            {
+              "from": "route",
+              "to": "pg",
+              "text": "INSERT INTO orders …"
+            },
+            {
+              "from": "pg",
+              "to": "route",
+              "text": "row",
+              "reply": true
+            },
+            {
+              "from": "route",
+              "to": "client",
+              "text": "201 order",
+              "reply": true
+            }
+          ],
+          "after": [
+            {
+              "from": "client",
+              "to": "route",
+              "text": "POST /orders { items }"
+            },
+            {
+              "from": "route",
+              "to": "svc",
+              "text": "placeOrder(body)"
+            },
+            {
+              "from": "svc",
+              "to": "svc",
+              "text": "total = Σ price × qty"
+            },
+            {
+              "from": "svc",
+              "to": "pg",
+              "text": "INSERT INTO orders …",
+              "note": "via orderRepository.create"
+            },
+            {
+              "from": "pg",
+              "to": "svc",
+              "text": "row",
+              "reply": true
+            },
+            {
+              "from": "svc",
+              "to": "route",
+              "text": "order",
+              "reply": true
+            },
+            {
+              "from": "route",
+              "to": "client",
+              "text": "201 order",
+              "reply": true
+            }
+          ],
+          "outcome": "Same result as before; the work just happens in the service."
+        },
+        {
+          "id": "empty",
+          "label": "Empty items",
+          "before": [
+            {
+              "from": "client",
+              "to": "route",
+              "text": "POST /orders { items: [] }"
+            },
+            {
+              "from": "route",
+              "to": "pg",
+              "text": "INSERT … total 0"
+            },
+            {
+              "from": "pg",
+              "to": "route",
+              "text": "row",
+              "reply": true
+            },
+            {
+              "from": "route",
+              "to": "client",
+              "text": "201 order (total 0)",
+              "reply": true
+            }
+          ],
+          "after": [
+            {
+              "from": "client",
+              "to": "route",
+              "text": "POST /orders { items: [] }"
+            },
+            {
+              "from": "route",
+              "to": "svc",
+              "text": "placeOrder(body)"
+            },
+            {
+              "from": "svc",
+              "to": "route",
+              "text": "throws status 400",
+              "reply": true,
+              "error": true
+            },
+            {
+              "from": "route",
+              "to": "client",
+              "text": "400 an order needs at least one item",
+              "reply": true,
+              "error": true
+            }
+          ],
+          "beforeOutcome": "An empty order was stored with a total of 0.",
+          "outcome": "Rejected before anything is written."
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Read-through cache in the service",
+      "chose": "caching inside orderService.getOrder",
+      "over": "caching in the route or the repository",
+      "why": "Keeps the route thin and the repository a plain SQL wrapper; the service decides what is cacheable.",
+      "where": [
+        "src/services/orderService.js:6-12"
+      ]
+    },
+    {
+      "title": "Validation errors carry an HTTP status",
+      "chose": "an Error with err.status = 400",
+      "over": "a dedicated error class",
+      "why": "Lets the route map it to a 400 with one check; other errors go to next().",
+      "where": [
+        "src/services/orderService.js:15-19",
+        "`src/routes/orders.js`"
+      ]
+    },
+    {
+      "title": "Fixed 5-minute TTL, no invalidation",
+      "chose": "expire after 300 s",
+      "over": "deleting the key on writes",
+      "why": "Simplest option; `cache.del` exists but nothing calls it yet.",
+      "where": [
+        "src/cache/redisCache.js:4"
+      ]
+    }
+  ],
+  "attention": [
+    {
+      "tag": "Behaviour change",
+      "title": "Reads can be up to 5 minutes stale",
+      "why": "Nothing deletes order:<id> when an order changes. Today there is no update route, so it only matters once one is added.",
+      "step": 3
+    },
+    {
+      "tag": "New dependency",
+      "title": "GET /orders/:id now fails when Redis is down",
+      "why": "`getOrder` awaits `cache.get` with no fallback to the repository.",
+      "step": 3
+    },
+    {
+      "tag": "Uncommitted",
+      "title": "The tests and the architecture note are not committed",
+      "why": "`test/orderService.test.js` and `docs/architecture.md` exist only in the working tree.",
+      "step": 5
+    }
+  ],
+  "steps": [
+    {
+      "title": "Move the SQL into an order repository",
+      "why": "`orderRepository` wraps the two statements the route used to run: `findById` returns the row or null, create inserts and returns the new row.",
+      "effect": "No behaviour change; the queries are byte-for-byte the old ones.",
+      "hunks": [
+        {
+          "file": "src/repositories/orderRepository.js",
+          "notes": [
+            [
+              "return rows[0] || null",
+              "Returns null instead of an empty result, so callers test for a missing order with !order"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Add a Redis cache with a 5-minute expiry",
+      "why": "`redisCache` connects once at load using `REDIS_URL` and stores JSON values with a 300-second TTL.",
+      "effect": "A new process-wide connection opens when the module is first required.",
+      "hunks": [
+        {
+          "file": "src/cache/redisCache.js",
+          "notes": [
+            [
+              "new Redis(process.env.REDIS_URL)",
+              "Connects at require time, not per request"
+            ],
+            [
+              "TTL_SECONDS = 300",
+              "The 5 minutes the commit message promises"
+            ],
+            [
+              "async function del",
+              "Defined but not called anywhere yet"
+            ]
+          ]
+        },
+        {
+          "file": "package.json",
+          "notes": [
+            [
+              "ioredis",
+              "The one new dependency"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Put the order rules in a service",
+      "why": "`orderService.getOrder` reads through the cache; `placeOrder` validates the items and computes the total before calling the repository.",
+      "effect": "Two behaviour changes: cached reads, and 400 for an empty or missing items list.",
+      "pseudocode": "getOrder(id):\n  return cache[id] ?? (cache[id] = repo.findById(id))   # only if found\n\nplaceOrder(body):\n  reject 400 unless body.items is a non-empty array\n  repo.create(body + total)",
+      "hunks": [
+        {
+          "file": "src/services/orderService.js",
+          "notes": [
+            [
+              "if (cached) return cached",
+              "Cache hit: Postgres is skipped"
+            ],
+            [
+              "if (order) await cache.set",
+              "Missing orders are not cached, so a 404 is always re-checked"
+            ],
+            [
+              "!Array.isArray(items)",
+              "Also catches a body with no items, which used to throw a TypeError"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Thin the routes down to calls into the service",
+      "why": "The route now imports `orderService` instead of db and maps results to HTTP: null → 404, `err.status` 400 → 400, anything else → `next(err)`.",
+      "effect": "Same URLs and response shapes; POST errors other than validation now reach Express's error handler.",
+      "hunks": [
+        {
+          "file": "src/routes/orders.js",
+          "notes": [
+            [
+              "require('../services/orderService')",
+              "Replaces require('../db'): the layering rule in CLAUDE.md"
+            ],
+            [
+              "if (err.status === 400)",
+              "Only validation errors are turned into a response here"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Test the cache hit and the empty-order rule, and document Redis",
+      "why": "Two node:test cases mock the cache and repository; `docs/architecture.md` records the new request path and `REDIS_URL`.",
+      "effect": "Covers the hit path and validation; the miss path and Redis failure are not tested.",
+      "hunks": [
+        {
+          "file": "test/orderService.test.js",
+          "notes": [
+            [
+              "find.mock.callCount(), 0",
+              "Proves a hit never reaches the repository"
+            ]
+          ]
+        },
+        {
+          "file": "docs/architecture.md"
+        }
+      ]
+    }
+  ],
+  "stopped": [
+    {
+      "what": "Empty orders are no longer stored with a total of 0",
+      "why": "`placeOrder` throws a 400 before the insert.",
+      "where": "src/services/orderService.js"
+    },
+    {
+      "what": "GET no longer always reads fresh data from Postgres",
+      "why": "A cached copy is returned for up to 5 minutes.",
+      "where": "src/services/orderService.js"
+    }
+  ],
+  "skip": [
+    {
+      "kind": "Lockfile",
+      "why": "Regenerated for `ioredis`.",
+      "files": [
+        "package-lock.json"
+      ]
+    }
+  ],
+  "unchecked": [
+    "What a client receives when Redis is unreachable (depends on Express 4's handling of a rejected async handler).",
+    "That `ioredis` 5.4.1 accepts the (key, value, 'EX', seconds) call form used in set()."
+  ]
+}

@@ -1,0 +1,14 @@
+---
+description: Use the explain-pr skill when the user asks what a pull request, branch, diff or an agent's finished work does, how it changes the architecture, or for a walkthrough of a change before review or commit.
+alwaysApply: false
+---
+
+# Explaining a change
+
+When the user asks what a change does ("explain this PR", "what did the agent change?", "what changed architecturally?", "walk me through this branch"), follow the `explain-pr` skill:
+
+- Input is a GitHub PR URL or number, or nothing for the current branch against the default branch (including uncommitted and untracked files).
+- The output is one HTML page and a Markdown summary, built by `node <skill>/scripts/explain-pr.mjs`. Never write the HTML yourself.
+- Explain, don't review. Describe what the code does and how the architecture changed; never grade code quality.
+- Read only. Never check out, install or run the code being explained.
+- When done, give the page's path and offer to open it (`build --open`), mention the `.md` summary, and list what couldn't be verified.

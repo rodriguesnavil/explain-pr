@@ -1,0 +1,10 @@
+{
+  "name": "explain-pr",
+  "version": "0.1.0",
+  "description": "Turn a PR or a local branch into one guided page: what it does, its architecture impact with a before/after diagram, behaviour flows, design decisions, and the diff in reading order.",
+  "author": { "name": "rodriguesnavil", "url": "https://github.com/rodriguesnavil" },
+  "homepage": "https://github.com/rodriguesnavil/explain-pr",
+  "repository": "https://github.com/rodriguesnavil/explain-pr",
+  "license": "MIT",
+  "keywords": ["pull-request", "architecture", "explain", "walkthrough", "diagram"]
+}

@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "source": "github",
+  "repo": "encode/starlette",
+  "branch": "pr3435",
+  "title": "Add HTTP Early Hints support",
+  "body": "",
+  "base": {
+    "ref": "main",
+    "sha": "04741d073fb6c3ab5fccad08be8ae7aad1f67e91"
+  },
+  "head": {
+    "ref": "add-early-hints",
+    "sha": "1677452b61ca0c8c86af0de27be4371e074cf6a3"
+  },
+  "commits": [
+    {
+      "sha": "1677452",
+      "subject": "Assert no Early Hints are sent without the extension",
+      "body": ""
+    },
+    {
+      "sha": "061ee13",
+      "subject": "Merge remote-tracking branch 'origin/main' into add-early-hints",
+      "body": ""
+    },
+    {
+      "sha": "07bcd4e",
+      "subject": "Assert response completion in Early Hints tests",
+      "body": ""
+    },
+    {
+      "sha": "4da7e44",
+      "subject": "Simplify Early Hints behavioral tests",
+      "body": ""
+    },
+    {
+      "sha": "0986216",
+      "subject": "Restore the GZip pathsend comment",
+      "body": ""
+    },
+    {
+      "sha": "b3d857a",
+      "subject": "Merge origin/main into add-early-hints",
+      "body": ""
+    },
+    {
+      "sha": "2489174",
+      "subject": "Make the Early Hints example runnable",
+      "body": ""
+    },
+    {
+      "sha": "9e0b0bd",
+      "subject": "Make Early Hints links positional",
+      "body": ""
+    },
+    {
+      "sha": "8568888",
+      "subject": "Group GZip passthrough events",
+      "body": ""
+    },
+    {
+      "sha": "ae3889a",
+      "subject": "Add HTTP Early Hints support",
+      "body": ""
+    }
+  ],
+  "linkedIssues": [],
+  "contextFiles": [
+    {
+      "path": "AGENTS.md"
+    }
+  ],
+  "config": null,
+  "stats": {
+    "files": 10,
+    "add": 240,
+    "del": 9
+  },
+  "files": [
+    {
+      "path": "docs/early-hints.md",
+      "status": "added",
+      "add": 72,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "mkdocs.yml",
+      "status": "modified",
+      "add": 1,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "starlette/endpoints.py",
+      "status": "modified",
+      "add": 1,
+      "del": 1,
+      "hunks": 1
+    },
+    {
+      "path": "starlette/middleware/base.py",
+      "status": "modified",
+      "add": 12,
+      "del": 6,
+      "hunks": 3
+    },
+    {
+      "path": "starlette/middleware/gzip.py",
+      "status": "modified",
+      "add": 1,
+      "del": 1,
+      "hunks": 1
+    },
+    {
+      "path": "starlette/requests.py",
+      "status": "modified",
+      "add": 5,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "tests/middleware/test_base.py",
+      "status": "modified",
+      "add": 40,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "tests/middleware/test_gzip.py",
+      "status": "modified",
+      "add": 34,
+      "del": 0,
+      "hunks": 1
+    },
+    {
+      "path": "tests/test_endpoints.py",
+      "status": "modified",
+      "add": 32,
+      "del": 1,
+      "hunks": 2
+    },
+    {
+      "path": "tests/test_requests.py",
+      "status": "modified",
+      "add": 42,
+      "del": 0,
+      "hunks": 2
+    }
+  ],
+  "workDir": "<tmp>/explain-pr/starlette-3435",
+  "slug": "starlette-3435",
+  "generatedAt": "2026-11-22T17:54:55.281Z",
+  "number": 3435,
+  "url": "https://github.com/encode/starlette/pull/3435"
+}

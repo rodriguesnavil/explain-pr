@@ -1,0 +1,961 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><!--EXPLAIN_TITLE--></title>
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --panel-2: #f2f2ef; --ink: #1c1d1f; --ink-2: #4b4f56; --ink-3: #80858d;
+  --line: #e3e3de; --line-2: #d2d2cc; --accent: #3b5bdb; --accent-soft: #e7ecff;
+  --add: #15803d; --add-soft: #e3f6e8; --add-line: #b6e2c3;
+  --del: #c2410c; --del-soft: #fde9e1; --del-line: #f5c3ae;
+  --chg: #b45309; --chg-soft: #fdf1dc; --chg-line: #f1d39b;
+  --err: #dc2626; --node: #ffffff; --code-bg: #fbfbfa;
+  --kw: #7c3aed; --str: #0f766e; --com: #8a8f98; --num: #b45309;
+  --radius: 12px; --shadow: 0 1px 2px rgba(20,20,20,.04), 0 2px 10px rgba(20,20,20,.04);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111214; --panel: #18191c; --panel-2: #1f2024; --ink: #e9eaec; --ink-2: #b4b8bf; --ink-3: #7d828a;
+    --line: #2a2c31; --line-2: #3a3d43; --accent: #8ea2ff; --accent-soft: #232a4a;
+    --add: #4ade80; --add-soft: #12291b; --add-line: #1f4d31;
+    --del: #fb8a5c; --del-soft: #2e1810; --del-line: #5b2e1c;
+    --chg: #fbbf24; --chg-soft: #2b2210; --chg-line: #5a4416;
+    --err: #f87171; --node: #1c1d21; --code-bg: #141518;
+    --kw: #c4a5ff; --str: #5eead4; --com: #6b7079; --num: #fbbf24;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 64px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, .mono { font-family: var(--mono); font-size: .88em; }
+p code, div code, td code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; }
+.note-box code { background: transparent; border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+header.top { padding: 34px 0 10px; }
+.crumbs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--ink-3); font-size: 13px; }
+.badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--panel-2); color: var(--ink-2); border: 1px solid var(--line); white-space: nowrap; }
+.badge.accent { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.badge.add { background: var(--add-soft); color: var(--add); border-color: var(--add-line); }
+.badge.del { background: var(--del-soft); color: var(--del); border-color: var(--del-line); }
+.badge.chg { background: var(--chg-soft); color: var(--chg); border-color: var(--chg-line); }
+h1 { font-size: 28px; line-height: 1.25; margin: 12px 0 10px; letter-spacing: -.01em; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--ink-2); font-size: 13.5px; }
+.facts b { color: var(--ink); font-weight: 600; }
+.plus { color: var(--add); font-weight: 600; } .minus { color: var(--del); font-weight: 600; }
+.dots { display: inline-flex; gap: 3px; vertical-align: middle; margin-left: 4px; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); }
+.dots i.on { background: var(--accent); }
+.summary { font-size: 20px; line-height: 1.45; margin: 22px 0 6px; font-weight: 500; max-width: 60em; }
+.overview { color: var(--ink-2); max-width: 62em; margin: 6px 0 0; }
+nav.toc { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); margin-top: 22px; }
+nav.toc .wrap { display: flex; gap: 4px; overflow-x: auto; padding-top: 8px; padding-bottom: 8px; scrollbar-width: none; }
+nav.toc a { color: var(--ink-2); font-size: 13px; font-weight: 500; padding: 5px 11px; border-radius: 8px; white-space: nowrap; }
+nav.toc a:hover, nav.toc a.on { background: var(--panel-2); color: var(--ink); text-decoration: none; }
+section { padding: 30px 0 4px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); margin: 0 0 14px; font-weight: 700; }
+h3 { font-size: 16px; margin: 0 0 6px; }
+.lead { font-size: 16px; color: var(--ink); margin: 0 0 16px; max-width: 62em; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.pad { padding: 18px 20px; }
+.muted { color: var(--ink-3); }
+.small { font-size: 13px; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.chip { font: 12px var(--mono); padding: 1px 7px; border-radius: 6px; background: var(--panel-2); color: var(--ink-2); border: 1px solid var(--line); }
+a.chip:hover { text-decoration: none; border-color: var(--accent); color: var(--accent); }
+
+/* intent */
+.intent { margin-top: 18px; }
+.intent .row { display: grid; grid-template-columns: 26px 1fr; gap: 8px; padding: 9px 0; border-top: 1px solid var(--line); }
+.intent .row:first-of-type { border-top: 0; }
+.ic { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; margin-top: 1px; }
+.ic.matches { background: var(--add-soft); color: var(--add); }
+.ic.partial, .ic.unchecked { background: var(--chg-soft); color: var(--chg); }
+.ic.mismatch { background: var(--del-soft); color: var(--del); }
+.ic.unstated { background: var(--panel-2); color: var(--ink-3); }
+
+/* segmented control */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 12px; }
+.seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg button { font: 600 13px var(--sans); border: 0; background: transparent; color: var(--ink-2); padding: 6px 12px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.seg button:focus-visible, .chipbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ctl-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); font-weight: 700; margin-right: 6px; }
+.chipbtn { font: 500 13px var(--sans); border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); padding: 5px 11px; border-radius: 999px; cursor: pointer; }
+.chipbtn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--ink-3); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 18px; height: 10px; border-radius: 3px; border: 2px solid; }
+.legend .l-add { border-color: var(--add); background: var(--add-soft); }
+.legend .l-del { border-color: var(--del); background: var(--del-soft); border-style: dashed; }
+.legend .l-chg { border-color: var(--chg); background: var(--chg-soft); }
+.legend .l-same { border-color: var(--line-2); background: var(--node); }
+
+/* diagrams */
+.diagram { overflow-x: auto; }
+.diagram svg { display: block; width: 100%; height: auto; }
+svg text { font-family: var(--sans); fill: var(--ink); }
+.a-band { fill: var(--panel-2); opacity: .55; }
+.a-band-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; fill: var(--ink-3); text-transform: uppercase; }
+.a-node rect.box { fill: var(--node); stroke: var(--line-2); stroke-width: 1.5; transition: stroke .2s, fill .2s; }
+.a-node .kind { font-size: 9.5px; font-weight: 700; letter-spacing: .09em; fill: var(--ink-3); }
+.a-node .lbl { font-size: 13px; font-weight: 600; }
+.a-node .tag { font-size: 9px; font-weight: 800; letter-spacing: .06em; }
+.a-node, .a-edge { transition: opacity .25s; }
+.a-node { cursor: default; }
+.a-node.linked { cursor: pointer; }
+.a-edge path { fill: none; stroke: var(--line-2); stroke-width: 1.6; }
+.a-edge .elbl rect { fill: var(--panel); stroke: var(--line); }
+.a-edge .elbl text { font-size: 11px; fill: var(--ink-2); }
+.mode-diff .s-added rect.box { stroke: var(--add); fill: var(--add-soft); stroke-width: 2; }
+.mode-diff .s-removed rect.box { stroke: var(--del); fill: var(--del-soft); stroke-dasharray: 5 4; stroke-width: 2; }
+.mode-diff .s-changed rect.box { stroke: var(--chg); fill: var(--chg-soft); stroke-width: 2; }
+.mode-diff .s-added .tag { fill: var(--add); } .mode-diff .s-removed .tag { fill: var(--del); } .mode-diff .s-changed .tag { fill: var(--chg); }
+.mode-diff .a-node.s-removed .lbl { text-decoration: line-through; }
+.mode-diff .a-edge.s-added path { stroke: var(--add); stroke-width: 2.2; }
+.mode-diff .a-edge.s-removed path { stroke: var(--del); stroke-dasharray: 6 5; stroke-width: 2; }
+.mode-diff .a-edge.s-changed path { stroke: var(--chg); stroke-width: 2.2; }
+.a-node .tag { display: none; } .mode-diff .a-node .tag { display: inline; }
+.hidden-el { opacity: 0; pointer-events: none; }
+.dim .a-node:not(.hl), .dim .a-edge:not(.hl) { opacity: .18; }
+.tip { position: fixed; z-index: 50; max-width: 320px; background: var(--ink); color: var(--bg); padding: 9px 11px; border-radius: 9px; font-size: 12.5px; line-height: 1.45; pointer-events: none; opacity: 0; transition: opacity .12s; }
+.tip b { display: block; font-size: 13px; margin-bottom: 2px; }
+.tip .f { font-family: var(--mono); font-size: 11px; opacity: .75; margin-top: 4px; }
+
+.s-head rect { fill: var(--panel-2); stroke: var(--line-2); }
+.s-head text { font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+.s-life { stroke: var(--line-2); stroke-dasharray: 3 5; }
+.s-msg line, .s-msg path { stroke: var(--ink-2); stroke-width: 1.5; fill: none; }
+.s-msg.reply line, .s-msg.reply path { stroke-dasharray: 5 4; }
+.s-msg text.t { font-size: 12.5px; fill: var(--ink); }
+.s-msg text.n { font-size: 11px; fill: var(--ink-3); font-style: italic; }
+.s-msg.c-new line, .s-msg.c-new path { stroke: var(--add); stroke-width: 2.2; } .s-msg.c-new text.t { fill: var(--add); font-weight: 600; }
+.s-msg.c-gone line, .s-msg.c-gone path { stroke: var(--del); stroke-width: 2; } .s-msg.c-gone text.t { fill: var(--del); text-decoration: line-through; }
+.s-msg.c-changed line, .s-msg.c-changed path { stroke: var(--chg); stroke-width: 2.2; } .s-msg.c-changed text.t { fill: var(--chg); font-weight: 600; }
+.s-msg.err text.t { fill: var(--err); font-weight: 600; } .s-msg.err line, .s-msg.err path { stroke: var(--err); }
+.s-pill rect { rx: 4; } .s-pill text { font-size: 9px; font-weight: 800; letter-spacing: .06em; fill: #fff; }
+@media (prefers-reduced-motion: reduce) { .a-node, .a-edge, .a-node rect.box { transition: none !important; } html { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: no-preference) {
+  .anim .s-msg { animation: fadein .35s ease both; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+}
+.outcome { margin: 10px 2px 0; font-size: 14px; color: var(--ink-2); }
+.outcome b { color: var(--ink); }
+.flowdesc { color: var(--ink-2); margin: 0 0 12px; }
+
+/* impact cards */
+.impact { position: relative; padding: 14px 16px 14px 19px; overflow: hidden; }
+.impact::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--line-2); }
+.impact.added::before { background: var(--add); } .impact.removed::before { background: var(--del); } .impact.changed::before { background: var(--chg); }
+.impact .k { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: var(--ink-3); display: flex; gap: 6px; align-items: center; }
+.impact .t { font-weight: 600; margin: 4px 0 2px; }
+.impact .d { color: var(--ink-2); font-size: 14px; }
+table.conv { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.conv td, table.conv th { text-align: left; padding: 9px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+table.conv th { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); border-top: 0; }
+
+/* decisions & attention */
+.decision { padding: 14px 16px; }
+.decision .chose { font-size: 14px; margin: 4px 0; }
+.decision .chose b { color: var(--add); } .decision .chose s { color: var(--ink-3); }
+.callout { display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 12px 14px; border-radius: 10px; background: var(--chg-soft); border: 1px solid var(--chg-line); }
+.callout + .callout { margin-top: 8px; }
+.callout .tagp { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--chg); white-space: nowrap; padding-top: 2px; }
+.callout.t-breaking, .callout.t-security-sensitive { background: var(--del-soft); border-color: var(--del-line); } .callout.t-breaking .tagp, .callout.t-security-sensitive .tagp { color: var(--del); }
+.callout.t-unchecked { background: var(--panel-2); border-color: var(--line); } .callout.t-unchecked .tagp { color: var(--ink-3); }
+.callout .w { color: var(--ink-2); font-size: 14px; }
+
+/* steps */
+.step { margin-bottom: 16px; overflow: hidden; }
+.step-head { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding: 18px 20px 6px; }
+.num { width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.step-head h3 { font-size: 17px; margin: 3px 0 6px; }
+.step-head p { margin: 0 0 6px; color: var(--ink-2); }
+.effect { font-size: 14px; color: var(--ink-2); }
+.effect b { color: var(--ink); }
+.step-body { padding: 6px 20px 18px 66px; }
+.pseudo { margin: 10px 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; color: var(--ink-2); }
+.pseudo::before { content: "In short"; display: block; font: 700 10.5px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
+details.file { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--code-bg); }
+details.file > summary { cursor: pointer; list-style: none; display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: var(--panel-2); font: 12.5px var(--mono); border-bottom: 1px solid var(--line); }
+details.file > summary::-webkit-details-marker { display: none; }
+details.file > summary::before { content: "▸"; color: var(--ink-3); transition: transform .15s; }
+details.file[open] > summary::before { transform: rotate(90deg); }
+details.file > summary .p { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code { overflow-x: auto; }
+table.diff { border-collapse: collapse; width: 100%; font: 12.5px/1.55 var(--mono); }
+table.diff td { padding: 0 10px; white-space: pre; vertical-align: top; }
+table.diff td.ln { width: 1%; min-width: 44px; text-align: right; color: var(--ink-3); user-select: none; padding: 0 6px; opacity: .8; }
+table.diff td.sg { width: 1%; user-select: none; color: var(--ink-3); padding: 0 4px; }
+table.diff tr.add td { background: var(--add-soft); } table.diff tr.add td.sg { color: var(--add); }
+table.diff tr.del td { background: var(--del-soft); } table.diff tr.del td.sg { color: var(--del); }
+table.diff tr.hh td { background: var(--accent-soft); color: var(--ink-3); padding: 3px 10px; font-size: 11.5px; }
+table.diff tr.fold td { color: var(--accent); cursor: pointer; padding: 2px 10px; font-size: 11.5px; background: var(--panel-2); }
+table.diff tr.note td { white-space: normal; padding: 0; background: var(--code-bg); }
+.note-box { margin: 4px 10px 8px 104px; padding: 7px 11px; border-left: 3px solid var(--accent); background: var(--accent-soft); color: var(--ink); border-radius: 0 8px 8px 0; font: 13.5px/1.45 var(--sans); }
+tr.has-note td.code-c { box-shadow: inset 3px 0 0 var(--accent); }
+.tk-k { color: var(--kw); } .tk-s { color: var(--str); } .tk-c { color: var(--com); font-style: italic; } .tk-n { color: var(--num); }
+.binary { padding: 10px 12px; color: var(--ink-3); font-size: 13px; }
+
+.list .item { padding: 12px 16px; border-top: 1px solid var(--line); }
+.list .item:first-child { border-top: 0; }
+.stopped .item { border-left: 3px solid var(--del); }
+footer { color: var(--ink-3); font-size: 12.5px; padding: 36px 0 50px; }
+.empty { color: var(--ink-3); font-style: italic; }
+@media (max-width: 720px) {
+  h1 { font-size: 23px; } .summary { font-size: 18px; }
+  .step-body { padding-left: 20px; } .note-box { margin-left: 10px; }
+}
+@media print { nav.toc { display: none; } details.file { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<!--EXPLAIN_DATA-->
+<div id="app"></div>
+<div class="tip" id="tip" role="tooltip"></div>
+<script>
+(function () {
+  'use strict'
+  var D = JSON.parse(document.getElementById('explain-data').textContent)
+  var SVGNS = 'http://www.w3.org/2000/svg'
+  var uid = 0
+
+  // ---------- tiny DOM helpers (text is always set as text, never as HTML) ----------
+  function h(tag, attrs) {
+    var el = document.createElement(tag)
+    setAttrs(el, attrs)
+    for (var i = 2; i < arguments.length; i++) add(el, arguments[i])
+    return el
+  }
+  function s(tag, attrs) {
+    var el = document.createElementNS(SVGNS, tag)
+    setAttrs(el, attrs)
+    for (var i = 2; i < arguments.length; i++) add(el, arguments[i])
+    return el
+  }
+  function setAttrs(el, attrs) {
+    if (!attrs) return
+    for (var k in attrs) {
+      var v = attrs[k]
+      if (v === undefined || v === null || v === false) continue
+      if (k === 'text') el.textContent = v
+      else if (k === 'on') for (var ev in v) el.addEventListener(ev, v[ev])
+      else el.setAttribute(k, v === true ? '' : v)
+    }
+  }
+  function add(el, c) {
+    if (c === undefined || c === null || c === false) return
+    if (Array.isArray(c)) return c.forEach(function (x) { add(el, x) })
+    el.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c)
+  }
+  function setKids(el) { el.textContent = ''; for (var i = 1; i < arguments.length; i++) add(el, arguments[i]) }
+  // `code` spans in prose become <code>; everything else stays plain text
+  function rich(t) {
+    var parts = String(t == null ? '' : t).split('`')
+    if (parts.length < 3) return String(t == null ? '' : t)
+    return parts.map(function (p, i) { return i % 2 ? h('code', { text: p }) : p })
+  }
+  function arr(v) { return Array.isArray(v) ? v : [] }
+  function cap(t) { t = String(t || ''); return t.charAt(0).toUpperCase() + t.slice(1) }
+  function slug(t) { return String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
+
+  var app = document.getElementById('app')
+  var M = D.meta || {}
+  var sections = []
+  var EXT_HASH = /\.(py|rb|sh|bash|zsh|ya?ml|toml|r|pl|ex|exs|nim|cr|coffee|dockerfile|mk|conf|ini)$|(^|\/)(Dockerfile|Makefile)$/i
+  var KW = /^(abstract|async|await|break|case|catch|class|const|continue|def|default|defer|del|do|elif|else|enum|except|export|extends|false|final|finally|fn|for|from|func|function|go|if|impl|implements|import|in|interface|is|lambda|let|match|mod|module|mut|new|nil|None|not|null|or|and|package|pass|private|protected|pub|public|raise|return|select|self|static|struct|super|switch|this|throw|throws|trait|true|True|False|try|type|typeof|undefined|use|var|void|where|while|with|yield)$/
+  var steps = arr(D.steps)
+  var fileToStep = {}
+  steps.forEach(function (st) { st.files.forEach(function (f) { if (!fileToStep[f.path]) fileToStep[f.path] = st.n }) })
+
+  // ---------- header ----------
+  var name = M.number ? (M.repo + ' #' + M.number) : (M.repo + (M.branch ? ' · ' + M.branch : ''))
+  var crumbs = h('div', { class: 'crumbs' },
+    h('span', { class: 'badge accent', text: M.source === 'local' ? 'Local ' + (M.mode === 'uncommitted' ? 'changes' : 'branch') : 'Pull request' }),
+    M.url ? h('a', { href: M.url, target: '_blank', rel: 'noopener', text: name }) : h('span', { text: name }),
+    M.state ? h('span', { class: 'badge', text: M.state }) : null,
+    D.kind ? h('span', { class: 'badge', text: D.kind }) : null
+  )
+  var facts = h('div', { class: 'facts' })
+  if (M.author) add(facts, h('span', null, 'by ', h('b', { text: M.author })))
+  if (M.base && M.head) add(facts, h('span', { class: 'mono' }, String(M.base.ref || ''), ' ← ', String(M.head.ref || '')))
+  add(facts, h('span', null, h('b', { text: String(M.files) }), ' files ', h('span', { class: 'plus', text: '+' + M.add }), ' ', h('span', { class: 'minus', text: '−' + M.del })))
+  if (D.effort) {
+    var dots = h('span', { class: 'dots', 'aria-hidden': 'true' })
+    for (var i = 1; i <= 5; i++) add(dots, h('i', { class: i <= D.effort.score ? 'on' : '' }))
+    add(facts, h('span', { title: D.effort.why || '' }, 'Effort to understand ', h('b', { text: D.effort.score + '/5' }), dots))
+  }
+  var header = h('header', { class: 'top wrap' }, crumbs, h('h1', { text: M.title || 'Untitled change' }), facts,
+    h('p', { class: 'summary' }, rich(D.summary)), D.overview ? h('p', { class: 'overview' }, rich(D.overview)) : null)
+  add(app, header)
+  var nav = h('nav', { class: 'toc', 'aria-label': 'Sections' }, h('div', { class: 'wrap' }))
+  add(app, nav)
+  var main = h('main', { class: 'wrap' })
+  add(app, main)
+
+  function section(id, title) {
+    var el = h('section', { id: id }, h('h2', { text: title }))
+    sections.push({ id: id, title: title })
+    add(main, el)
+    return el
+  }
+
+  // ---------- intent ----------
+  var intentChecks = arr(D.intent && D.intent.checks)
+  var ov = section('overview', 'Intent vs code')
+  if (intentChecks.length) {
+    var ICON = { matches: '✓', partial: '~', mismatch: '✕', unchecked: '?', unstated: '–' }
+    var card = h('div', { class: 'card pad intent' })
+    if (D.intent.source) add(card, h('div', { class: 'small muted', style: 'margin-bottom:6px', text: 'Stated intent from ' + D.intent.source }))
+    intentChecks.forEach(function (c) {
+      add(card, h('div', { class: 'row' },
+        h('span', { class: 'ic ' + c.status, title: c.status, text: ICON[c.status] || '?' }),
+        h('div', null, h('div', null, rich(c.claim)), c.note ? h('div', { class: 'small muted' }, rich(c.note)) : null)))
+    })
+    add(ov, card)
+  } else {
+    add(ov, h('p', { class: 'empty', text: D.intent && D.intent.source === 'none' ? 'No intent was stated (no PR description or commit messages), so the page says what the change does, not what it was meant to do.' : 'No claims to check.' }))
+  }
+
+  // ---------- architecture ----------
+  var A = D.architecture
+  if (A) {
+    var as = section('architecture', 'Architecture impact')
+    if (A.summary) add(as, h('p', { class: 'lead' }, rich(A.summary)))
+    if (A.diagram && arr(A.diagram.nodes).length) add(as, archDiagram(A.diagram))
+    if (arr(A.impact).length) {
+      var g = h('div', { class: 'grid', style: 'margin-top:14px' })
+      A.impact.forEach(function (m) {
+        var cls = { added: 'add', removed: 'del', changed: 'chg' }[m.change] || ''
+        add(g, h('div', { class: 'card impact ' + m.change },
+          h('div', { class: 'k' }, h('span', { text: m.kind }), h('span', { class: 'badge ' + cls, text: m.change })),
+          h('div', { class: 't', text: m.title }),
+          m.detail ? h('div', { class: 'd' }, rich(m.detail)) : null,
+          fileChips(m.files)))
+      })
+      add(as, g)
+    }
+    if (arr(A.conventions).length) {
+      var CONV = { follows: ['add', 'Follows'], departs: ['del', 'Departs'], new: ['chg', 'New pattern'] }
+      var t = h('table', { class: 'conv' }, h('thead', null, h('tr', null, h('th', { text: 'Convention' }), h('th', { text: 'Status' }), h('th', { text: 'Note' }))))
+      var tb = h('tbody')
+      A.conventions.forEach(function (c) {
+        var cv = CONV[c.status] || ['', c.status]
+        add(tb, h('tr', null,
+          h('td', null, h('div', null, rich(c.rule)), c.source ? h('div', { class: 'small muted mono', text: c.source }) : null),
+          h('td', null, h('span', { class: 'badge ' + cv[0], text: cv[1] })),
+          h('td', { class: 'small' }, rich(c.note || ''))))
+      })
+      add(t, tb)
+      add(as, h('div', { class: 'card', style: 'margin-top:14px;overflow-x:auto' }, h('div', { class: 'pad', style: 'padding-bottom:4px' }, h('h3', { text: 'Against your conventions' })), t))
+    }
+  }
+
+  // ---------- flows ----------
+  var flows = arr(D.flows)
+  if (flows.length) {
+    var fs = section('flows', flows.length > 1 ? 'Behaviour flows' : 'Behaviour flow')
+    var flowHost = h('div')
+    if (flows.length > 1) {
+      var tabs = h('div', { class: 'seg', role: 'tablist', style: 'margin-bottom:12px' })
+      flows.forEach(function (f, i) {
+        add(tabs, h('button', { 'aria-pressed': i === 0 ? 'true' : 'false', text: f.title, on: { click: function () {
+          Array.prototype.forEach.call(tabs.children, function (b, j) { b.setAttribute('aria-pressed', j === i ? 'true' : 'false') })
+          setKids(flowHost, flowView(f))
+        } } }))
+      })
+      add(fs, tabs)
+    }
+    add(fs, flowHost)
+    flowHost.appendChild(flowView(flows[0]))
+  }
+
+  // ---------- decisions ----------
+  var decisions = arr(D.decisions)
+  if (decisions.length) {
+    var ds = section('decisions', 'Decisions made')
+    var dg = h('div', { class: 'grid' })
+    decisions.forEach(function (d) {
+      add(dg, h('div', { class: 'card decision' },
+        h('h3', { text: d.title }),
+        d.chose ? h('div', { class: 'chose' }, 'Chose ', h('b', { text: d.chose }), d.over ? [' over ', h('s', { text: d.over })] : null) : null,
+        d.why ? h('div', { class: 'small', style: 'color:var(--ink-2)' }, rich(d.why)) : null,
+        fileChips(d.where)))
+    })
+    add(ds, dg)
+  }
+
+  // ---------- attention ----------
+  var attention = arr(D.attention)
+  if (attention.length) {
+    var ats = section('attention', 'Worth a closer look')
+    attention.forEach(function (a) { add(ats, callout(a, true)) })
+  }
+
+  // ---------- steps ----------
+  var ss = section('walkthrough', 'Walkthrough · ' + steps.length + ' step' + (steps.length === 1 ? '' : 's'))
+  steps.forEach(function (st) {
+    var body = h('div', { class: 'step-body' })
+    arr(st.attention).forEach(function (ai) { add(body, callout(attention[ai], false)) })
+    if (st.pseudocode) add(body, h('div', { class: 'pseudo', text: st.pseudocode }))
+    st.files.forEach(function (f) { add(body, fileView(f)) })
+    add(ss, h('article', { class: 'card step', id: 'step-' + st.n },
+      h('div', { class: 'step-head' }, h('div', { class: 'num', text: String(st.n) }),
+        h('div', null, h('h3', null, rich(st.title)), h('p', null, rich(st.why)),
+          st.effect ? h('div', { class: 'effect' }, h('b', { text: 'Effect: ' }), rich(st.effect)) : null)),
+      body))
+  })
+
+  // ---------- stopped ----------
+  var stopped = arr(D.stopped)
+  if (stopped.length) {
+    var sts = section('stopped', 'What stopped happening')
+    var sl = h('div', { class: 'card list stopped' })
+    stopped.forEach(function (x) {
+      add(sl, h('div', { class: 'item' }, h('div', { style: 'font-weight:600' }, rich(x.what)),
+        x.why ? h('div', { class: 'small muted' }, rich(x.why)) : null,
+        x.where ? fileChips([x.where]) : null))
+    })
+    add(sts, sl)
+  }
+
+  // ---------- skip ----------
+  var skip = arr(D.skip)
+  if (skip.length) {
+    var sk = section('skip', 'Files you can skip')
+    var kl = h('div', { class: 'card list' })
+    skip.forEach(function (g) {
+      add(kl, h('div', { class: 'item' }, h('div', null, h('b', { text: g.kind }), g.why ? h('span', { class: 'muted', text: ' — ' + g.why }) : null),
+        h('div', { class: 'chips' }, g.files.map(function (f) {
+          return h('span', { class: 'chip', title: '+' + f.add + ' −' + f.del }, f.path + '  +' + f.add + ' −' + f.del)
+        }))))
+    })
+    add(sk, kl)
+  }
+
+  // ---------- unchecked ----------
+  var unchecked = arr(D.unchecked)
+  if (unchecked.length) {
+    var us = section('unchecked', 'Not verified')
+    add(us, h('p', { class: 'small muted', text: 'These need the code to run. The explanation never runs it, so treat them as open.' }))
+    add(us, h('div', { class: 'card list' }, unchecked.map(function (u) { return h('div', { class: 'item small' }, rich(u)) })))
+  }
+
+  add(app, h('footer', { class: 'wrap' },
+    'Generated by ', h('a', { href: 'https://github.com/rodriguesnavil/explain-pr', target: '_blank', rel: 'noopener', text: 'explain-pr' }),
+    M.head && M.head.sha ? ' at ' + String(M.head.sha).slice(0, 7) : '',
+    M.generatedAt ? ' on ' + new Date(M.generatedAt).toLocaleString() : '',
+    '. A snapshot: regenerate after new commits.'))
+
+  // nav
+  var navWrap = nav.firstChild
+  sections.forEach(function (sc) { add(navWrap, h('a', { href: '#' + sc.id, text: sc.title.replace(/ · .*/, '') })) })
+  if ('IntersectionObserver' in window) {
+    var links = navWrap.querySelectorAll('a')
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return
+        links.forEach(function (l) { l.classList.toggle('on', l.getAttribute('href') === '#' + e.target.id) })
+      })
+    }, { rootMargin: '-30% 0px -60% 0px' })
+    sections.forEach(function (sc) { io.observe(document.getElementById(sc.id)) })
+  }
+
+  // =====================================================================
+  function fileChips(files) {
+    files = arr(files)
+    if (!files.length) return null
+    return h('div', { class: 'chips' }, files.map(function (f) {
+      var path = String(f).replace(/:\d+(-\d+)?$/, '')
+      var n = stepForPath(path)
+      return n ? h('a', { class: 'chip', href: '#step-' + n, title: 'Step ' + n, text: f }) : h('span', { class: 'chip', text: f })
+    }))
+  }
+  function stepForPath(p) {
+    if (fileToStep[p]) return fileToStep[p]
+    for (var k in fileToStep) if (k.slice(-p.length) === p || p.slice(-k.length) === k) return fileToStep[k]
+    return null
+  }
+
+  function callout(a, withStep) {
+    return h('div', { class: 'callout t-' + slug(a.tag) },
+      h('div', { class: 'tagp', text: a.tag }),
+      h('div', null, h('div', { style: 'font-weight:600' }, rich(a.title)), a.why ? h('div', { class: 'w' }, rich(a.why)) : null,
+        withStep && a.step ? h('a', { class: 'small', href: '#step-' + a.step, text: 'Step ' + a.step + ' →' }) : null))
+  }
+
+  // ---------- architecture diagram ----------
+  function archDiagram(dia) {
+    var nodes = arr(dia.nodes), edges = arr(dia.edges), layers = arr(dia.layers)
+    var byId = {}
+    nodes.forEach(function (n) { byId[n.id] = n; n.status = n.status || 'same' })
+    edges.forEach(function (e) { e.status = e.status || 'same' })
+
+    // rows: given layers (top to bottom), else longest-path ranks
+    var rowOf = {}, rowLabels = []
+    if (layers.length) {
+      var used = layers.filter(function (l) { return nodes.some(function (n) { return n.layer === l.id }) })
+      var extra = nodes.some(function (n) { return !used.some(function (l) { return l.id === n.layer }) })
+      used.forEach(function (l, i) { rowLabels[i] = l.label || l.id })
+      nodes.forEach(function (n) {
+        var i = used.findIndex(function (l) { return l.id === n.layer })
+        rowOf[n.id] = i >= 0 ? i : used.length
+      })
+      if (extra) rowLabels[used.length] = ''
+    } else {
+      nodes.forEach(function (n) { rowOf[n.id] = 0 })
+      for (var it = 0; it < nodes.length; it++) {
+        var moved = false
+        edges.forEach(function (e) {
+          if (byId[e.from] && byId[e.to] && rowOf[e.to] < rowOf[e.from] + 1 && rowOf[e.from] + 1 < nodes.length) { rowOf[e.to] = rowOf[e.from] + 1; moved = true }
+        })
+        if (!moved) break
+      }
+    }
+    var rows = []
+    nodes.forEach(function (n) { (rows[rowOf[n.id]] = rows[rowOf[n.id]] || []).push(n) })
+    rows = rows.filter(Boolean)
+    var newLabels = []
+    rows.forEach(function (r, i) { newLabels[i] = layers.length ? rowLabels[rowOf[r[0].id]] : '' })
+    rows.forEach(function (r, i) { r.forEach(function (n) { rowOf[n.id] = i }) })
+    // order within rows by the mean position of neighbours in the row above (one sweep down)
+    var pos = {}
+    rows.forEach(function (r, ri) {
+      if (ri > 0) {
+        var bc = {}
+        r.forEach(function (n, k) {
+          var ps = edges.filter(function (e) { return e.to === n.id && rowOf[e.from] < ri }).map(function (e) { return pos[e.from] })
+            .concat(edges.filter(function (e) { return e.from === n.id && rowOf[e.to] < ri }).map(function (e) { return pos[e.to] }))
+            .filter(function (v) { return v !== undefined })
+          bc[n.id] = ps.length ? ps.reduce(function (a, b) { return a + b }, 0) / ps.length : k
+        })
+        r.sort(function (a, b) { return bc[a.id] - bc[b.id] })
+      }
+      r.forEach(function (n, k) { pos[n.id] = k - (r.length - 1) / 2 })
+    })
+
+    var NW = 178, NH = 60, RH = 128, PAD = 24
+    // widen the gap between boxes when a labelled edge runs sideways within a row
+    var GX = 34
+    edges.forEach(function (e) {
+      if (e.label && rowOf[e.from] === rowOf[e.to] && rowOf[e.from] !== undefined) GX = Math.max(GX, Math.min(190, e.label.length * 6.3 + 14) + 18)
+    })
+    var LW = newLabels.some(Boolean) ? 112 : 0
+    var maxRow = Math.max.apply(null, rows.map(function (r) { return r.length }))
+    var W = Math.max(720, LW + PAD * 2 + maxRow * NW + (maxRow - 1) * GX)
+    var H = PAD * 2 + rows.length * RH - (RH - NH) + 8
+    var cx = LW + (W - LW) / 2
+    var P = {}
+    rows.forEach(function (r, ri) {
+      r.forEach(function (n) { P[n.id] = { x: cx + pos[n.id] * (NW + GX), y: PAD + ri * RH + NH / 2 } })
+    })
+
+    var svg = s('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': dia.title || 'Architecture diagram' })
+    svg.style.minWidth = Math.round(W * 0.72) + 'px'
+    var defs = s('defs')
+    ;['same', 'added', 'removed', 'changed'].forEach(function (st) {
+      var col = { same: 'var(--line-2)', added: 'var(--add)', removed: 'var(--del)', changed: 'var(--chg)' }[st]
+      add(defs, s('marker', { id: 'ah-' + st + '-' + (++uid), viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' },
+        s('path', { d: 'M0,0 L10,5 L0,10 z', fill: col, 'data-m': st })))
+    })
+    add(svg, defs)
+    var markerId = {}
+    Array.prototype.forEach.call(defs.children, function (m) { markerId[m.firstChild.getAttribute('data-m')] = m.id })
+
+    // bands
+    rows.forEach(function (r, ri) {
+      if (!LW) return
+      var y = PAD + ri * RH - 14
+      add(svg, s('rect', { class: 'a-band', x: 8, y: y, width: W - 16, height: NH + 28, rx: 10 }))
+      if (newLabels[ri]) add(svg, s('text', { class: 'a-band-label', x: 20, y: y + (NH + 28) / 2 + 4, text: newLabels[ri] }))
+    })
+
+    var edgeEls = [], nodeEls = [], labelEls = []
+    var pairs = {}
+    edges.forEach(function (e) { pairs[e.from + '>' + e.to] = true })
+    // Is x (± margin) inside some node box in row ri, other than the edge's own ends?
+    function blocker(ri, x, skipA, skipB) {
+      return (rows[ri] || []).find(function (n) { return n.id !== skipA && n.id !== skipB && Math.abs(P[n.id].x - x) < NW / 2 + 10 })
+    }
+    function freeX(ri, x, a, b) {
+      var bl = blocker(ri, x, a, b)
+      if (!bl) return null
+      var cands = [P[bl.id].x - NW / 2 - GX / 2, P[bl.id].x + NW / 2 + GX / 2]
+      cands.sort(function (p, q) { return Math.abs(p - x) - Math.abs(q - x) })
+      for (var c = 0; c < cands.length; c++) if (!blocker(ri, cands[c], a, b)) return cands[c]
+      return cands[0]
+    }
+    function pathThrough(pts) {
+      var d = 'M' + pts[0].x + ',' + pts[0].y
+      for (var i = 1; i < pts.length; i++) {
+        var p0 = pts[i - 1], p1 = pts[i], dy = (p1.y - p0.y) / 2
+        d += ' C' + p0.x + ',' + (p0.y + dy) + ' ' + p1.x + ',' + (p1.y - dy) + ' ' + p1.x + ',' + p1.y
+      }
+      return d
+    }
+    edges.forEach(function (e) {
+      var a = P[e.from], b = P[e.to]
+      if (!a || !b) return
+      var off = pairs[e.to + '>' + e.from] ? (e.from < e.to ? -9 : 9) : 0
+      var d, mx, my
+      var ra = rowOf[e.from], rb = rowOf[e.to]
+      if (ra === rb) {
+        var dir = b.x > a.x ? 1 : -1
+        var between = rows[ra].some(function (n) { var x = P[n.id].x; return n.id !== e.from && n.id !== e.to && (x - a.x) * dir > 0 && (b.x - x) * dir > 0 })
+        if (!between) {
+          var x1 = a.x + dir * NW / 2, x2 = b.x - dir * NW / 2
+          d = 'M' + x1 + ',' + (a.y + off) + ' L' + x2 + ',' + (b.y + off)
+          mx = (x1 + x2) / 2; my = a.y + off
+        } else {
+          // arc under the row so it doesn't run behind the boxes in between
+          var sx = a.x + dir * NW / 4, tx = b.x - dir * NW / 4, sy = a.y + NH / 2, low = sy + 46
+          d = 'M' + sx + ',' + sy + ' C' + sx + ',' + low + ' ' + tx + ',' + low + ' ' + tx + ',' + sy
+          mx = (sx + tx) / 2; my = sy + 34
+        }
+      } else {
+        var down = rb > ra
+        var start = { x: a.x + off, y: a.y + (down ? NH / 2 : -NH / 2) }
+        var end = { x: b.x + off, y: b.y + (down ? -NH / 2 : NH / 2) }
+        var pts = [start]
+        var step = down ? 1 : -1
+        for (var ri = ra + step; ri !== rb; ri += step) {
+          var cy = PAD + ri * RH + NH / 2
+          // the drawn curve eases in and out (x follows a smoothstep of y), so test where it actually crosses this row
+          var fx = null
+          ;[cy - NH / 2 - 4, cy, cy + NH / 2 + 4].some(function (yy) {
+            var t = Math.max(0, Math.min(1, (yy - start.y) / (end.y - start.y)))
+            var lx = start.x + (end.x - start.x) * (3 * t * t - 2 * t * t * t)
+            fx = freeX(ri, lx, e.from, e.to)
+            return fx !== null
+          })
+          if (fx !== null) {
+            pts.push({ x: fx, y: cy - step * (NH / 2 + 8) })
+            pts.push({ x: fx, y: cy + step * (NH / 2 + 8) })
+          }
+        }
+        pts.push(end)
+        d = pathThrough(pts)
+        if (pts.length > 2) { mx = (pts[0].x + pts[1].x) / 2; my = (pts[0].y + pts[1].y) / 2 }
+        else {
+          // label in the gap between the two rows, away from the boxes
+          mx = (start.x + end.x) / 2; my = (start.y + end.y) / 2
+        }
+      }
+      var g = s('g', { class: 'a-edge s-' + e.status, 'data-from': e.from, 'data-to': e.to })
+      var path = s('path', { d: d })
+      g.appendChild(path)
+      if (e.label) {
+        var tw = Math.min(190, e.label.length * 6.3 + 14)
+        var lg = s('g', { class: 'a-edge elbl-wrap s-' + e.status }, s('g', { class: 'elbl' }, s('rect', { x: mx - tw / 2, y: my - 10, width: tw, height: 20, rx: 6 }), s('text', { x: mx, y: my + 4, 'text-anchor': 'middle', text: trunc(e.label, 30) })))
+        e._lbl = lg
+        labelEls.push(lg)
+      }
+      e._el = g; e._path = path
+      edgeEls.push(g)
+      add(svg, g)
+    })
+
+    var TAG = { added: 'NEW', removed: 'REMOVED', changed: 'CHANGED' }
+    nodes.forEach(function (n) {
+      var p = P[n.id]
+      var linked = arr(n.files).some(function (f) { return stepForPath(String(f)) })
+      var g = s('g', { class: 'a-node s-' + n.status + (linked ? ' linked' : ''), transform: 'translate(' + (p.x - NW / 2) + ',' + (p.y - NH / 2) + ')', tabindex: 0, 'data-id': n.id })
+      add(g, s('rect', { class: 'box', width: NW, height: NH, rx: n.kind === 'db' || n.kind === 'store' ? 16 : 10, 'stroke-dasharray': n.kind === 'external' ? '3 3' : null }))
+      add(g, s('text', { class: 'kind', x: 12, y: 17, text: String(n.kind || 'module').toUpperCase() }))
+      if (TAG[n.status]) add(g, s('text', { class: 'tag', x: NW - 10, y: 17, 'text-anchor': 'end', text: TAG[n.status] }))
+      var lines = wrap(n.label, 22, 2)
+      lines.forEach(function (ln, i) { add(g, s('text', { class: 'lbl', x: 12, y: (lines.length === 1 ? 40 : 34) + i * 15, text: ln })) })
+      g.addEventListener('mouseenter', function (ev) { focusNode(n.id, true); showTip(ev, n) })
+      g.addEventListener('mousemove', moveTip)
+      g.addEventListener('mouseleave', function () { focusNode(n.id, false); hideTip() })
+      g.addEventListener('focus', function () { focusNode(n.id, true) })
+      g.addEventListener('blur', function () { focusNode(n.id, false) })
+      if (linked) g.addEventListener('click', function () {
+        var f = arr(n.files).find(function (f) { return stepForPath(String(f)) })
+        location.hash = '#step-' + stepForPath(String(f))
+      })
+      n._el = g
+      nodeEls.push(g)
+      add(svg, g)
+    })
+    labelEls.forEach(function (l) { add(svg, l) })
+
+    function focusNode(id, on) {
+      svg.classList.toggle('dim', on)
+      nodes.forEach(function (n) { n._el.classList.toggle('hl', on && n.id === id) })
+      edges.forEach(function (e) {
+        if (!e._el) return
+        var hit = on && (e.from === id || e.to === id)
+        e._el.classList.toggle('hl', hit)
+        if (e._lbl) e._lbl.classList.toggle('hl', hit)
+        if (hit) { byId[e.from]._el.classList.add('hl'); byId[e.to]._el.classList.add('hl') }
+      })
+    }
+
+    function setMode(mode) {
+      svg.classList.toggle('mode-diff', mode === 'diff')
+      nodes.forEach(function (n) {
+        var hide = (mode === 'before' && n.status === 'added') || (mode === 'after' && n.status === 'removed')
+        n._el.classList.toggle('hidden-el', hide)
+      })
+      edges.forEach(function (e) {
+        if (!e._el) return
+        var endHidden = byId[e.from]._el.classList.contains('hidden-el') || byId[e.to]._el.classList.contains('hidden-el')
+        var hide = endHidden || (mode === 'before' && e.status === 'added') || (mode === 'after' && e.status === 'removed')
+        e._el.classList.toggle('hidden-el', hide)
+        if (e._lbl) e._lbl.classList.toggle('hidden-el', hide)
+        var mk = mode === 'diff' ? markerId[e.status] : markerId.same
+        e._path.setAttribute('marker-end', 'url(#' + mk + ')')
+      })
+    }
+
+    var seg = segmented([['before', 'Before'], ['diff', 'What changed'], ['after', 'After']], 'diff', setMode)
+    setMode('diff')
+    var legend = h('div', { class: 'legend' },
+      h('span', null, h('i', { class: 'l-add' }), 'added'), h('span', null, h('i', { class: 'l-chg' }), 'changed'),
+      h('span', null, h('i', { class: 'l-del' }), 'removed'), h('span', null, h('i', { class: 'l-same' }), 'unchanged'))
+    return h('div', { class: 'card pad' },
+      dia.title ? h('h3', { text: dia.title }) : null,
+      h('div', { class: 'controls' }, seg, legend),
+      h('div', { class: 'diagram' }, svg),
+      h('div', { class: 'small muted', style: 'margin-top:6px', text: 'Hover a box to trace its connections; click one to jump to its step.' + (window.innerWidth < 720 ? ' Scroll sideways to see all of it.' : '') }))
+  }
+
+  // ---------- sequence diagram ----------
+  function flowView(f) {
+    var cases = arr(f.cases)
+    var state = { c: 0, side: 'after' }
+    var host = h('div', { class: 'diagram' })
+    var outcome = h('p', { class: 'outcome' })
+    var sideHost = h('span')
+    function render() {
+      var c = cases[state.c]
+      var hasBefore = Array.isArray(c.before)
+      if (!hasBefore) state.side = 'after'
+      setKids(sideHost, hasBefore ? segmented([['before', 'Before this change'], ['after', 'With this change']], state.side, function (v) { state.side = v; render() }) : h('span', { class: 'badge add', text: 'New flow' }))
+      var msgs = state.side === 'before' ? c.before : c.after
+      var other = state.side === 'before' ? c.after : c.before
+      setKids(host, seqSvg(f, msgs || [], hasBefore ? other || [] : null, state.side))
+      var text = state.side === 'before' ? (c.beforeOutcome || '') : (c.outcome || '')
+      setKids(outcome, text ? [h('b', { text: state.side === 'before' ? 'Before: ' : 'Now: ' }), rich(text)] : '')
+    }
+    var controls = h('div', { class: 'controls' })
+    if (cases.length > 1) {
+      var chips = h('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;align-items:center' }, h('span', { class: 'ctl-label', text: 'Case' }))
+      cases.forEach(function (c, i) {
+        add(chips, h('button', { class: 'chipbtn', 'aria-pressed': i === 0 ? 'true' : 'false', text: c.label, on: { click: function () {
+          state.c = i
+          Array.prototype.forEach.call(chips.querySelectorAll('button'), function (b, j) { b.setAttribute('aria-pressed', j === i ? 'true' : 'false') })
+          render()
+        } } }))
+      })
+      add(controls, chips)
+    }
+    add(controls, sideHost)
+    add(controls, h('div', { class: 'legend' },
+      h('span', null, h('i', { class: 'l-add' }), 'new call'), h('span', null, h('i', { class: 'l-chg' }), 'changed'), h('span', null, h('i', { class: 'l-del' }), 'no longer happens')))
+    render()
+    return h('div', { class: 'card pad' }, h('h3', { text: f.title }), f.description ? h('p', { class: 'flowdesc' }, rich(f.description)) : null, controls, host, outcome)
+  }
+
+  function key(m) { return m.from + '|' + m.to + '|' + m.text }
+
+  function seqSvg(f, msgs, other, side) {
+    var ps = arr(f.participants)
+    var n = ps.length
+    var lane = Math.max(150, Math.min(230, 920 / n))
+    var PAD = 20
+    var W = Math.max(640, PAD * 2 + lane * n)
+    var x0 = (W - lane * n) / 2
+    var X = {}
+    ps.forEach(function (p, i) { X[p.id] = x0 + lane * (i + 0.5) })
+    var otherKeys = {}
+    if (other) other.forEach(function (m) { otherKeys[key(m)] = true })
+    var y = 92
+    var items = msgs.map(function (m) {
+      var self = m.from === m.to
+      var item = { m: m, y: y, self: self }
+      y += (self ? 58 : 46) + (m.note ? 16 : 0)
+      return item
+    })
+    var H = Math.max(y + 10, 150)
+    var svg = s('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', class: 'anim', 'aria-label': f.title + (side === 'before' ? ' (before)' : '') })
+    svg.style.minWidth = Math.round(W * 0.7) + 'px'
+    var mid = 'sq' + (++uid)
+    var defs = s('defs')
+    ;[['n', 'var(--ink-2)'], ['new', 'var(--add)'], ['gone', 'var(--del)'], ['changed', 'var(--chg)'], ['err', 'var(--err)']].forEach(function (p) {
+      add(defs, s('marker', { id: mid + p[0], viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' }, s('path', { d: 'M0,0 L10,5 L0,10 z', fill: p[1] })))
+    })
+    add(svg, defs)
+    ps.forEach(function (p) {
+      var x = X[p.id]
+      add(svg, s('line', { class: 's-life', x1: x, y1: 56, x2: x, y2: H - 6 }))
+      var label = trunc(String(p.label || p.id).toUpperCase(), Math.floor((lane - 20) / 7.6))
+      var bw = Math.min(lane - 16, label.length * 7.6 + 24)
+      add(svg, s('g', { class: 's-head' }, s('rect', { x: x - bw / 2, y: 18, width: bw, height: 34, rx: 8 }), s('text', { x: x, y: 39.5, 'text-anchor': 'middle', text: label })))
+    })
+    if (!items.length) add(svg, s('text', { x: W / 2, y: 110, 'text-anchor': 'middle', fill: 'var(--ink-3)', text: 'Nothing happens here in this case.' }))
+    items.forEach(function (it, i) {
+      var m = it.m
+      var change = m.change || (other ? (otherKeys[key(m)] ? 'same' : side === 'after' ? 'new' : 'gone') : 'same')
+      var cls = 's-msg' + (m.reply ? ' reply' : '') + (m.error ? ' err' : '') + (change !== 'same' ? ' c-' + change : '')
+      var g = s('g', { class: cls, style: 'animation-delay:' + (i * 70) + 'ms' })
+      var mk = 'url(#' + mid + (m.error ? 'err' : change === 'same' ? 'n' : change) + ')'
+      var x1 = X[m.from], x2 = X[m.to], yy = it.y
+      var label = m.text
+      if (it.self) {
+        add(g, s('path', { d: 'M' + x1 + ',' + yy + ' h40 v22 h-36', 'marker-end': mk }))
+        add(g, s('text', { class: 't', x: x1 + 48, y: yy + 15, text: trunc(label, 48) }))
+        if (m.note) add(g, s('text', { class: 'n', x: x1 + 48, y: yy + 31, text: trunc(m.note, 60) }))
+      } else {
+        var dir = x2 > x1 ? 1 : -1
+        add(g, s('line', { x1: x1 + dir * 2, y1: yy, x2: x2 - dir * 4, y2: yy, 'marker-end': mk }))
+        var span = Math.abs(x2 - x1)
+        var pill = change === 'new' ? ['NEW', 'var(--add)'] : change === 'gone' ? ['GONE', 'var(--del)'] : change === 'changed' ? ['CHANGED', 'var(--chg)'] : null
+        var pw = pill ? pill[0].length * 6.4 + 10 : 0
+        var maxc = Math.max(14, Math.floor((span - pw - 10) / 6.9))
+        var shown = trunc(label, maxc)
+        var tw = shown.length * 6.9
+        var cxm = (x1 + x2) / 2 + (pill ? (pw + 6) / 2 : 0)
+        add(g, s('text', { class: 't', x: cxm, y: yy - 8, 'text-anchor': 'middle', text: shown }, s('title', { text: label })))
+        if (m.note) add(g, s('text', { class: 'n', x: (x1 + x2) / 2, y: yy + 16, 'text-anchor': 'middle', text: trunc(m.note, Math.max(24, Math.floor(span / 6.4))) }, s('title', { text: m.note })))
+        if (pill) {
+          var px = Math.max(Math.min(x1, x2) + 4, cxm - tw / 2 - pw - 6)
+          add(g, s('g', { class: 's-pill' }, s('rect', { x: px, y: yy - 21, width: pw, height: 13, fill: pill[1] }), s('text', { x: px + pw / 2, y: yy - 11.5, 'text-anchor': 'middle', text: pill[0] })))
+        }
+      }
+      add(svg, g)
+    })
+    return svg
+  }
+
+  // ---------- diff view ----------
+  function highlight(text, hashComments) {
+    var out = []
+    var re = hashComments
+      ? /(#.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d[\d_.xXa-fA-F]*\b)|([A-Za-z_$][\w$]*)/g
+      : /(\/\/.*$|\/\*.*?\*\/|^\s*\*.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d[\d_.xXa-fA-F]*\b)|([A-Za-z_$][\w$]*)/g
+    var last = 0, m
+    while ((m = re.exec(text))) {
+      if (m.index > last) out.push(document.createTextNode(text.slice(last, m.index)))
+      var cls = m[1] ? 'tk-c' : m[2] ? 'tk-s' : m[3] ? 'tk-n' : KW.test(m[4]) ? 'tk-k' : null
+      out.push(cls ? h('span', { class: cls, text: m[0] }) : document.createTextNode(m[0]))
+      last = re.lastIndex
+      if (m[0] === '') re.lastIndex++
+    }
+    if (last < text.length) out.push(document.createTextNode(text.slice(last)))
+    return out
+  }
+
+  function fileView(f) {
+    var STATUS = { added: ['add', 'new file'], deleted: ['del', 'deleted'], renamed: ['chg', 'renamed'], modified: ['', 'modified'] }
+    var st = STATUS[f.status] || ['', f.status]
+    var det = h('details', { class: 'file', open: true },
+      h('summary', null, h('span', { class: 'p', title: f.path, text: f.status === 'renamed' && f.oldPath ? f.oldPath + ' → ' + f.path : f.path }),
+        st[1] !== 'modified' ? h('span', { class: 'badge ' + st[0], text: st[1] }) : null,
+        h('span', { class: 'plus', text: '+' + f.add }), h('span', { class: 'minus', text: '−' + f.del })))
+    if (f.binary || !f.hunks.length) {
+      add(det, h('div', { class: 'binary', text: f.binary ? 'Binary file: no text diff.' : 'No content changes (mode or rename only).' }))
+      return det
+    }
+    var hash = EXT_HASH.test(f.path)
+    var table = h('table', { class: 'diff' })
+    var tbody = h('tbody')
+    f.hunks.forEach(function (hk) {
+      add(tbody, h('tr', { class: 'hh' }, h('td', { colspan: 4, text: hk.header })))
+      var lines = hk.lines
+      // fold long runs of unchanged lines that carry no note
+      var i = 0
+      while (i < lines.length) {
+        var j = i
+        while (j < lines.length && lines[j].t === 'ctx' && !lines[j].notes) j++
+        var run = j - i
+        if (run > 8) {
+          var head = i === 0 ? 0 : 3, tail = j === lines.length ? 0 : 3
+          for (var k = i; k < i + head; k++) addLine(tbody, lines[k], hash)
+          var hiddenRows = []
+          for (var k2 = i + head; k2 < j - tail; k2++) hiddenRows.push(lines[k2])
+          ;(function (rows) {
+            var fold = h('tr', { class: 'fold' }, h('td', { colspan: 4, text: '⋯  ' + rows.length + ' unchanged lines' }))
+            fold.addEventListener('click', function () {
+              var frag = document.createDocumentFragment()
+              rows.forEach(function (l) { addLine(frag, l, hash) })
+              fold.parentNode.replaceChild(frag, fold)
+            })
+            add(tbody, fold)
+          })(hiddenRows)
+          for (var k3 = j - tail; k3 < j; k3++) addLine(tbody, lines[k3], hash)
+          i = j
+        } else {
+          for (var k4 = i; k4 < j; k4++) addLine(tbody, lines[k4], hash)
+          if (j < lines.length) addLine(tbody, lines[j], hash)
+          i = j + 1
+        }
+      }
+    })
+    add(table, tbody)
+    add(det, h('div', { class: 'code' }, table))
+    return det
+  }
+  function addLine(parent, l, hash) {
+    var cls = l.t === 'add' ? 'add' : l.t === 'del' ? 'del' : ''
+    var tr = h('tr', { class: cls + (l.notes ? ' has-note' : '') },
+      h('td', { class: 'ln', text: l.o !== undefined ? String(l.o) : '' }),
+      h('td', { class: 'ln', text: l.n !== undefined ? String(l.n) : '' }),
+      h('td', { class: 'sg', text: l.t === 'add' ? '+' : l.t === 'del' ? '−' : ' ' }),
+      h('td', { class: 'code-c' }, highlight(l.text, hash)))
+    parent.appendChild(tr)
+    arr(l.notes).forEach(function (n) {
+      parent.appendChild(h('tr', { class: 'note' }, h('td', { colspan: 4 }, h('div', { class: 'note-box' }, rich(n)))))
+    })
+  }
+
+  // ---------- shared ----------
+  function segmented(opts, value, onChange) {
+    var seg = h('div', { class: 'seg', role: 'group' })
+    opts.forEach(function (o) {
+      add(seg, h('button', { type: 'button', 'aria-pressed': o[0] === value ? 'true' : 'false', text: o[1], on: { click: function () {
+        Array.prototype.forEach.call(seg.children, function (b) { b.setAttribute('aria-pressed', b === this ? 'true' : 'false') }, this)
+        onChange(o[0])
+      } } }))
+    })
+    return seg
+  }
+  function trunc(t, n) { t = String(t); return t.length > n ? t.slice(0, Math.max(1, n - 1)) + '…' : t }
+  function wrap(t, width, maxLines) {
+    var words = String(t).split(/\s+/), lines = [], cur = ''
+    words.forEach(function (w) {
+      if (!cur) cur = w
+      else if ((cur + ' ' + w).length <= width) cur += ' ' + w
+      else { lines.push(cur); cur = w }
+    })
+    if (cur) lines.push(cur)
+    if (lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] = trunc(lines[maxLines - 1] + '…', width) }
+    return lines.map(function (l) { return trunc(l, width + 2) })
+  }
+  var tip = document.getElementById('tip')
+  function showTip(ev, n) {
+    setKids(tip, h('b', { text: n.label }), n.detail ? h('div', { text: n.detail }) : null,
+      n.status !== 'same' ? h('div', { style: 'margin-top:3px;opacity:.8', text: cap(n.status) }) : null,
+      arr(n.files).length ? h('div', { class: 'f', text: arr(n.files).join(', ') }) : null)
+    tip.style.opacity = 1
+    moveTip(ev)
+  }
+  function moveTip(ev) {
+    var x = Math.min(ev.clientX + 14, window.innerWidth - tip.offsetWidth - 10)
+    var y = ev.clientY + 16
+    if (y + tip.offsetHeight > window.innerHeight - 8) y = ev.clientY - tip.offsetHeight - 12
+    tip.style.left = x + 'px'; tip.style.top = y + 'px'
+  }
+  function hideTip() { tip.style.opacity = 0 }
+})()
+</script>
+</body>
+</html>

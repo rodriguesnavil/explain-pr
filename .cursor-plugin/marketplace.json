@@ -1,0 +1,14 @@
+{
+  "name": "explain-pr",
+  "owner": { "name": "rodriguesnavil", "email": "rodriguesnavil@gmail.com" },
+  "metadata": {
+    "description": "Understand what a pull request or branch does and how it changes your architecture."
+  },
+  "plugins": [
+    {
+      "name": "explain-pr",
+      "source": "plugins/explain-pr",
+      "description": "Turn a PR or a local branch into one guided page: what it does, its architecture impact, behaviour flows, and the diff in reading order."
+    }
+  ]
+}

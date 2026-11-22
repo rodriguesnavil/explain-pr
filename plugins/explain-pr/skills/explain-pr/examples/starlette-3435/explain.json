@@ -1,0 +1,486 @@
+{
+  "version": 1,
+  "summary": "Handlers can now call `request.send_early_hints(...)` to send a 103 Early Hints response before the real one, and both `BaseHTTPMiddleware` and `GZipMiddleware` now pass those hints through instead of breaking on or dropping them.",
+  "overview": "It's a new public method on `Request`, plus two pieces of plumbing so the method actually reaches the server. Class-based endpoints now give their `Request` a real `send` channel, and the two middlewares that sit between the app and the server learn about the `http.response.early_hint` ASGI message. Without the server's extension, the method does nothing.",
+  "kind": "feature",
+  "effort": {
+    "score": 2,
+    "why": "Small surface, but one subtle loop rewrite in BaseHTTPMiddleware."
+  },
+  "intent": {
+    "source": "commit messages",
+    "checks": [
+      {
+        "claim": "Add HTTP Early Hints support",
+        "status": "matches",
+        "note": "`Request.send_early_hints` sends `http.response.early_hint` with the links encoded as latin-1 bytes."
+      },
+      {
+        "claim": "Make Early Hints links positional",
+        "status": "matches",
+        "note": "Signature is `send_early_hints(link, /, *additional_links)`: at least one link, no keywords."
+      },
+      {
+        "claim": "Assert no Early Hints are sent without the extension",
+        "status": "matches",
+        "note": "The method checks `scope[\"extensions\"]` and returns silently when the server doesn't advertise the extension."
+      },
+      {
+        "claim": "Group GZip passthrough events",
+        "status": "matches",
+        "note": "`early_hint` joins `trailers` in the same pass-through branch of `IdentityResponder.send`."
+      },
+      {
+        "claim": "(not stated) Class-based endpoints get a send channel",
+        "status": "unstated",
+        "note": "`HTTPEndpoint.dispatch` now passes `send=self.send`. That also makes `request.send_push_promise` work in `HTTPEndpoint`s, where it used to raise."
+      }
+    ]
+  },
+  "architecture": {
+    "summary": "No new modules or dependencies. The change adds one public API and teaches the request path (endpoint → middleware → server) about one more ASGI message type that can arrive before `http.response.start`.",
+    "impact": [
+      {
+        "kind": "api",
+        "change": "added",
+        "title": "`Request.send_early_hints(link, *additional_links)`",
+        "detail": "New public coroutine; a no-op unless the server advertises the `http.response.early_hint` extension.",
+        "files": [
+          "starlette/requests.py",
+          "docs/early-hints.md"
+        ]
+      },
+      {
+        "kind": "boundary",
+        "change": "changed",
+        "title": "`HTTPEndpoint` requests can write to the response channel",
+        "detail": "The endpoint's `Request` now holds the real ASGI `send`, not the raising `empty_send`.",
+        "files": [
+          "starlette/endpoints.py"
+        ]
+      },
+      {
+        "kind": "module",
+        "change": "changed",
+        "title": "`BaseHTTPMiddleware` forwards pre-response messages",
+        "detail": "It now reads messages in a loop until the response start, forwarding early hints to the server and recording debug info.",
+        "files": [
+          "starlette/middleware/base.py"
+        ]
+      },
+      {
+        "kind": "module",
+        "change": "changed",
+        "title": "`GZipMiddleware` passes early hints through",
+        "detail": "Before, an `early_hint` message matched no branch and was silently dropped.",
+        "files": [
+          "starlette/middleware/gzip.py"
+        ]
+      }
+    ],
+    "conventions": [
+      {
+        "source": "AGENTS.md",
+        "rule": "After each heading, include text explaining the section before any code snippets",
+        "status": "follows",
+        "note": "docs/early-hints.md opens each section with prose before its example."
+      }
+    ],
+    "diagram": {
+      "title": "Where an early hint travels",
+      "layers": [
+        {
+          "id": "app",
+          "label": "App code"
+        },
+        {
+          "id": "fw",
+          "label": "Starlette"
+        },
+        {
+          "id": "mw",
+          "label": "Middleware"
+        },
+        {
+          "id": "server",
+          "label": "Server"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "handler",
+          "label": "Your handler",
+          "kind": "function",
+          "layer": "app",
+          "status": "same",
+          "detail": "Calls request.send_early_hints(...) before returning a response."
+        },
+        {
+          "id": "endpoint",
+          "label": "HTTPEndpoint",
+          "kind": "module",
+          "layer": "fw",
+          "status": "changed",
+          "detail": "Now builds Request with send=self.send.",
+          "files": [
+            "starlette/endpoints.py"
+          ]
+        },
+        {
+          "id": "request",
+          "label": "Request",
+          "kind": "module",
+          "layer": "fw",
+          "status": "changed",
+          "detail": "New send_early_hints method.",
+          "files": [
+            "starlette/requests.py"
+          ]
+        },
+        {
+          "id": "base",
+          "label": "BaseHTTPMiddleware",
+          "kind": "module",
+          "layer": "mw",
+          "status": "changed",
+          "detail": "Forwards early hints straight to the server while waiting for the response start.",
+          "files": [
+            "starlette/middleware/base.py"
+          ]
+        },
+        {
+          "id": "gzip",
+          "label": "GZipMiddleware",
+          "kind": "module",
+          "layer": "mw",
+          "status": "changed",
+          "detail": "Passes early_hint through untouched.",
+          "files": [
+            "starlette/middleware/gzip.py"
+          ]
+        },
+        {
+          "id": "asgi",
+          "label": "ASGI server",
+          "kind": "external",
+          "layer": "server",
+          "status": "same",
+          "detail": "Must advertise the http.response.early_hint extension (e.g. Hypercorn, Granian)."
+        }
+      ],
+      "edges": [
+        {
+          "from": "handler",
+          "to": "request",
+          "label": "send_early_hints()",
+          "status": "added"
+        },
+        {
+          "from": "endpoint",
+          "to": "request",
+          "label": "passes send",
+          "status": "changed"
+        },
+        {
+          "from": "request",
+          "to": "base",
+          "label": "early_hint",
+          "status": "added"
+        },
+        {
+          "from": "request",
+          "to": "gzip",
+          "label": "early_hint",
+          "status": "added"
+        },
+        {
+          "from": "base",
+          "to": "asgi",
+          "label": "forwarded",
+          "status": "added"
+        },
+        {
+          "from": "gzip",
+          "to": "asgi",
+          "label": "passed through",
+          "status": "added"
+        }
+      ]
+    }
+  },
+  "flows": [
+    {
+      "id": "base",
+      "title": "Through BaseHTTPMiddleware",
+      "description": "A handler sends one hint, then returns a response, behind a `BaseHTTPMiddleware`.",
+      "participants": [
+        {
+          "id": "handler",
+          "label": "Handler"
+        },
+        {
+          "id": "mw",
+          "label": "BaseHTTPMiddleware"
+        },
+        {
+          "id": "server",
+          "label": "ASGI server"
+        }
+      ],
+      "cases": [
+        {
+          "id": "ext",
+          "label": "Server supports early hints",
+          "before": [
+            {
+              "from": "handler",
+              "to": "mw",
+              "text": "http.response.early_hint"
+            },
+            {
+              "from": "mw",
+              "to": "mw",
+              "text": "treats it as the response start",
+              "error": true
+            },
+            {
+              "from": "mw",
+              "to": "server",
+              "text": "broken response",
+              "error": true
+            }
+          ],
+          "after": [
+            {
+              "from": "handler",
+              "to": "mw",
+              "text": "http.response.early_hint"
+            },
+            {
+              "from": "mw",
+              "to": "server",
+              "text": "http.response.early_hint",
+              "note": "forwarded immediately, loop continues"
+            },
+            {
+              "from": "handler",
+              "to": "mw",
+              "text": "http.response.start"
+            },
+            {
+              "from": "mw",
+              "to": "server",
+              "text": "http.response.start"
+            },
+            {
+              "from": "mw",
+              "to": "server",
+              "text": "http.response.body"
+            }
+          ],
+          "beforeOutcome": "Nothing sent early hints before this PR. Had one arrived, the middleware read only the first message and would have taken it as the response start (unchecked).",
+          "outcome": "The 103 goes out first, then the normal response."
+        },
+        {
+          "id": "noext",
+          "label": "Server without the extension",
+          "after": [
+            {
+              "from": "handler",
+              "to": "handler",
+              "text": "send_early_hints() returns, nothing sent"
+            },
+            {
+              "from": "handler",
+              "to": "mw",
+              "text": "http.response.start"
+            },
+            {
+              "from": "mw",
+              "to": "server",
+              "text": "http.response.start"
+            },
+            {
+              "from": "mw",
+              "to": "server",
+              "text": "http.response.body"
+            }
+          ],
+          "outcome": "Same as a request without hints: the call is a silent no-op."
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "No-op without the server extension",
+      "chose": "silently skip",
+      "over": "raising an error",
+      "why": "Handlers can call it unconditionally; only servers that advertise `http.response.early_hint` receive anything.",
+      "where": [
+        "starlette/requests.py:351"
+      ]
+    },
+    {
+      "title": "Positional-only links",
+      "chose": "`link, /, *additional_links`",
+      "over": "a list argument or keywords",
+      "why": "At least one link is required by the signature itself. Each link is a full `Link` header value.",
+      "where": [
+        "starlette/requests.py:350"
+      ]
+    },
+    {
+      "title": "Forward hints inside the middleware's read loop",
+      "chose": "a `while True` loop that forwards `early_hint` and keeps reading",
+      "over": "buffering them until the response starts",
+      "why": "Hints are useful only if they reach the client before the response, so they go to the server as soon as they arrive.",
+      "where": [
+        "starlette/middleware/base.py:156-165"
+      ]
+    }
+  ],
+  "attention": [
+    {
+      "tag": "Subtle",
+      "title": "BaseHTTPMiddleware now reads any number of pre-response messages",
+      "why": "The old code read one message, plus one more only if the first was a debug message. Now it loops past every `debug` and `early_hint` message until something else arrives.",
+      "step": 2
+    },
+    {
+      "tag": "Behaviour change",
+      "title": "`send_push_promise` now works in `HTTPEndpoint`s",
+      "why": "It's a side effect of passing `send`: before, the endpoint's Request held `empty_send`, which raises when called.",
+      "step": 1
+    }
+  ],
+  "steps": [
+    {
+      "title": "Add `send_early_hints` and give endpoint requests a send channel",
+      "why": "`Request.send_early_hints` encodes each link as latin-1 and sends one `http.response.early_hint` message, but only when the scope's extensions include it. `HTTPEndpoint.dispatch` now builds its Request with `send=self.send`, so the call can reach the server.",
+      "effect": "Function routes already had a send channel; class-based endpoints gain one.",
+      "hunks": [
+        {
+          "file": "starlette/requests.py",
+          "notes": [
+            [
+              "if \"http.response.early_hint\" in self.scope.get(\"extensions\", {})",
+              "No extension, no message: the call returns silently"
+            ],
+            [
+              "value.encode(\"latin-1\")",
+              "ASGI wants header values as bytes"
+            ]
+          ]
+        },
+        {
+          "file": "starlette/endpoints.py",
+          "notes": [
+            [
+              "send=self.send",
+              "Before: no send, so Request fell back to empty_send, which raises"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Let `BaseHTTPMiddleware` forward hints while it waits for the response",
+      "why": "`_CachedRequest` now takes `send` like `Request` does. The read of the app's first message becomes a loop: `debug` messages are recorded, `early_hint` messages are sent straight to the server, and the first other message ends the loop as before.",
+      "effect": "Hints sent from a handler behind any `BaseHTTPMiddleware` reach the client before the response.",
+      "pseudocode": "loop:\n  msg = next message from app\n  debug      → remember info, keep reading\n  early_hint → send to server now, keep reading\n  otherwise  → this is the response start; stop",
+      "hunks": [
+        {
+          "file": "starlette/middleware/base.py",
+          "notes": [
+            [
+              "request = _CachedRequest(scope, receive, send)",
+              "So a handler's send_early_hints inside dispatch() has a channel too"
+            ],
+            [
+              "elif message[\"type\"] == \"http.response.early_hint\":",
+              "Forwarded immediately instead of being mistaken for the response start"
+            ],
+            [
+              "info = message[\"info\"]",
+              "Same debug handling as before, now inside the loop"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Pass early hints through GZip untouched",
+      "why": "`IdentityResponder.send` groups `http.response.early_hint` with `http.response.trailers` in the branch that forwards the message as-is.",
+      "effect": "Before, the message matched no branch and was dropped.",
+      "hunks": [
+        {
+          "file": "starlette/middleware/gzip.py",
+          "notes": [
+            [
+              "message_type in (\"http.response.early_hint\", \"http.response.trailers\")",
+              "Not compressed, not delayed"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Test the method, the endpoint, and both middlewares",
+      "why": "Each test sends a hint and asserts the message order the server sees: `early_hint` first, then `http.response.start`, then the body. Two request tests cover the no-extension and no-send-channel cases.",
+      "effect": "Covers every path in the diagram; nothing runs against a real server.",
+      "hunks": [
+        {
+          "file": "tests/test_requests.py",
+          "notes": [
+            [
+              "send.assert_not_awaited()",
+              "Without the extension nothing is sent"
+            ]
+          ]
+        },
+        {
+          "file": "tests/test_endpoints.py"
+        },
+        {
+          "file": "tests/middleware/test_base.py",
+          "notes": [
+            [
+              "assert events[:2] == [",
+              "Two hints (endpoint + middleware) arrive before the start"
+            ]
+          ]
+        },
+        {
+          "file": "tests/middleware/test_gzip.py"
+        }
+      ]
+    }
+  ],
+  "stopped": [
+    {
+      "what": "GZipMiddleware no longer drops `http.response.early_hint` messages",
+      "why": "They used to match no branch in `IdentityResponder.send`.",
+      "where": "starlette/middleware/gzip.py"
+    },
+    {
+      "what": "Requests in `HTTPEndpoint` no longer hold the raising `empty_send`",
+      "why": "They get the real `send`.",
+      "where": "starlette/endpoints.py"
+    }
+  ],
+  "skip": [
+    {
+      "kind": "Docs",
+      "why": "A usage page for the new method and its nav entry.",
+      "files": [
+        "docs/early-hints.md",
+        "mkdocs.yml"
+      ]
+    }
+  ],
+  "unchecked": [
+    "What a real server (Hypercorn, Granian) sends to the browser for these messages; the tests use fake send callables.",
+    "Exactly how the old `BaseHTTPMiddleware` would have failed on an early hint arriving first."
+  ]
+}
