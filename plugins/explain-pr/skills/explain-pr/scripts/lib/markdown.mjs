@@ -5,8 +5,7 @@ const INTENT_ICON = { matches: '✅', partial: '🟡', mismatch: '❌', unchecke
 const CHANGE_ICON = { added: '🟢 added', removed: '🔴 removed', changed: '🟠 changed' }
 const CONV_ICON = { follows: '✅ follows', departs: '⚠️ departs', new: '🆕 new pattern' }
 
-const mid = (s) => 'n_' + String(s).replace(/[^A-Za-z0-9_]/g, '_')
-const mlabel = (s) => String(s ?? '').replace(/"/g, "'").replace(/[\n\r]+/g, ' ').replace(/[<>]/g, '')
+const mlabel = (s) => String(s ?? '').replace(/"/g, "'").replace(/[\n\r]+/g, ' ').replace(/[<>;]/g, '')
 const cell = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\n+/g, ' ')
 
 export function toMarkdown(d) {
@@ -95,6 +94,10 @@ export function toMarkdown(d) {
 
 export function archMermaid(dia) {
   const lines = ['flowchart TD']
+  // Use index-prefixed IDs to avoid collisions between node ids that differ only in special chars
+  // e.g. "a-b" and "a_b" would both become "n_a_b" without the index.
+  const idMap = new Map(dia.nodes.map((n, i) => [n.id, `n${i}_${String(n.id).replace(/[^A-Za-z0-9_]/g, '_')}`]))
+  const mid = (id) => idMap.get(id) ?? `nx_${String(id).replace(/[^A-Za-z0-9_]/g, '_')}`
   const byLayer = new Map()
   for (const n of dia.nodes) {
     const k = n.layer ?? ''
@@ -138,6 +141,9 @@ const msgKey = (m) => `${m.from}|${m.to}|${m.text}`
 
 export function seqMermaid(flow, msgs, other, side) {
   const lines = ['sequenceDiagram']
+  // Use index-prefixed IDs to prevent collisions between participant ids that map to the same safe string.
+  const pidMap = new Map((flow.participants || []).map((p, i) => [p.id, `p${i}_${String(p.id).replace(/[^A-Za-z0-9_]/g, '_')}`]))
+  const mid = (id) => pidMap.get(id) ?? `px_${String(id).replace(/[^A-Za-z0-9_]/g, '_')}`
   for (const p of flow.participants) lines.push(`  participant ${mid(p.id)} as ${mlabel(p.label || p.id)}`)
   const otherKeys = new Set((other || []).map(msgKey))
   for (const m of msgs || []) {

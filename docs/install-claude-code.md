@@ -54,7 +54,7 @@ In any git repository with a branch that differs from `main`:
 /explain-pr:explain-pr
 ```
 
-Claude collects the change, writes `explain.json`, builds the page and publishes it as an artifact, or gives you the file path if it can't publish.
+Claude collects the change, writes `explain.json`, builds the page and gives you the path.
 
 ## Troubleshooting
 

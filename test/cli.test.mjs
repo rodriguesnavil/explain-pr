@@ -247,3 +247,92 @@ test('plugin manifests are valid and consistent', () => {
   const v = cli(['--version'])
   assert.equal(v.stdout.trim(), claude.version)
 })
+
+test('parseDiff handles git-quoted accented file names and " b/" in folder name', async () => {
+  const { parseDiff } = await lib('diff.mjs')
+  // Git quotes paths with non-ASCII chars using C-style octal escapes.
+  // é = UTF-8 bytes 0xC3 0xA9 = octal 303 251
+  const d = `diff --git a/"caf\\303\\251.txt" b/"caf\\303\\251.txt"\n--- a/"caf\\303\\251.txt"\n+++ b/"caf\\303\\251.txt"\n@@ -0,0 +1 @@\n+bonjour\n` +
+    `diff --git a/x b/y/z.ts b/x b/y/z.ts\n--- a/x b/y/z.ts\n+++ b/x b/y/z.ts\n@@ -1 +1 @@\n-old\n+new\n`
+  const files = parseDiff(d)
+  assert.equal(files.length, 2)
+  assert.equal(files[0].path, 'café.txt', `got "${files[0].path}"`)
+  assert.equal(files[1].path, 'x b/y/z.ts', `got "${files[1].path}"`)
+})
+
+test('findFile only matches whole path segments', async () => {
+  const { parseDiff, findFile } = await lib('diff.mjs')
+  const d = `diff --git a/src/superusers.ts b/src/superusers.ts\n--- a/src/superusers.ts\n+++ b/src/superusers.ts\n@@ -1 +1 @@\n-a\n+b\n`
+  const files = parseDiff(d)
+  assert.ok(findFile(files, 'users.ts').error, 'should not match superusers.ts for users.ts')
+  assert.ok(!findFile(files, 'superusers.ts').error, 'should match superusers.ts by suffix')
+})
+
+test('buildModel rejects TODO placeholders', async () => {
+  const { buildModel } = await lib('model.mjs')
+  const r = buildModel({ version: 1, summary: 'TODO: fill this in', steps: [] }, '', {})
+  assert.ok(r.errors.some((e) => /TODO/i.test(e)), `expected TODO error, got: ${r.errors.join(', ')}`)
+})
+
+test('buildModel warns on unknown explain.json keys', async () => {
+  const { buildModel } = await lib('model.mjs')
+  const r = buildModel({ version: 1, summary: 'x', stoped: [{ what: 'x' }], steps: [] }, '', {})
+  assert.ok(r.warnings.some((w) => /stoped.*unknown/i.test(w)), `expected unknown-key warning, got: ${r.warnings.join(', ')}`)
+})
+
+test('buildModel fails when diff fingerprint does not match', async () => {
+  const { buildModel } = await lib('model.mjs')
+  const { createHash } = await import('node:crypto')
+  const diff = `diff --git a/x.js b/x.js\n--- a/x.js\n+++ b/x.js\n@@ -1 +1 @@\n-a\n+b\n`
+  const fp = createHash('sha256').update(diff).digest('hex').slice(0, 16)
+  const explain = { version: 1, diffFingerprint: fp, summary: 's', steps: [] }
+  const ok = buildModel(explain, diff, {})
+  assert.ok(!ok.errors.some((e) => /fingerprint/i.test(e)), `should not error on matching fingerprint: ${ok.errors.join(', ')}`)
+  const changed = buildModel(explain, diff + '\nextra', {})
+  assert.ok(changed.errors.some((e) => /fingerprint/i.test(e)), `should error on changed diff: ${changed.errors.join(', ')}`)
+})
+
+test('unknown CLI option is an error', () => {
+  const r = cli(['collect', '--uncomitted'])   // misspelled --uncommitted
+  assert.notEqual(r.status, 0)
+  assert.match(r.stderr + r.stdout, /unknown option/)
+})
+
+test('collect (local) includes accented untracked file names', () => {
+  const repo = tmp()
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' })
+  g('init', '-q', '-b', 'main')
+  g('config', 'user.email', 't@example.com')
+  g('config', 'user.name', 't')
+  writeFileSync(join(repo, 'a.js'), 'x\n')
+  g('add', '-A')
+  g('commit', '-qm', 'base')
+  g('checkout', '-qb', 'feature')
+  writeFileSync(join(repo, 'café.txt'), 'bonjour\n')
+  const out = join(tmp(), 'w')
+  const r = cli(['collect', '--base', 'main', '--cwd', repo, '--out', out])
+  assert.equal(r.status, 0, r.stderr)
+  const diff = readFileSync(join(out, 'pr.diff'), 'utf8')
+  assert.match(diff, /café\.txt|caf/, 'accented filename must appear in diff')
+})
+
+test('collect (local) redacts untracked secret files', () => {
+  const repo = tmp()
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' })
+  g('init', '-q', '-b', 'main')
+  g('config', 'user.email', 't@example.com')
+  g('config', 'user.name', 't')
+  writeFileSync(join(repo, 'a.js'), 'x\n')
+  g('add', '-A')
+  g('commit', '-qm', 'base')
+  g('checkout', '-qb', 'feature')
+  writeFileSync(join(repo, '.env.local'), 'SECRET=sk-live-abc123\n')
+  const out = join(tmp(), 'w')
+  const r = cli(['collect', '--base', 'main', '--cwd', repo, '--out', out])
+  assert.equal(r.status, 0, r.stderr)
+  const diff = readFileSync(join(out, 'pr.diff'), 'utf8')
+  assert.doesNotMatch(diff, /sk-live-abc123/, 'secret content must not appear in diff')
+  assert.match(diff, /hidden.*secret/i, 'redaction placeholder must appear')
+  const meta = JSON.parse(readFileSync(join(out, 'meta.json'), 'utf8'))
+  assert.ok(meta.secretFiles?.length > 0, 'secretFiles must be listed in meta.json')
+})

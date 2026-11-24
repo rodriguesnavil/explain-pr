@@ -33,6 +33,13 @@ Usage:
   explain-pr --version
 `
 
+const KNOWN_FLAGS = {
+  collect: new Set(['pr', 'repo', 'base', 'committed', 'uncommitted', 'cwd', 'out', 'force']),
+  init: new Set(['force']),
+  check: new Set([]),
+  build: new Set(['html', 'md', 'no-md', 'open', 'force']),
+}
+
 function args(argv) {
   const out = { _: [] }
   for (let i = 0; i < argv.length; i++) {
@@ -87,6 +94,14 @@ export function main(argv = process.argv.slice(2)) {
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') return void console.log(HELP)
   if (cmd === '--version' || cmd === 'version' || cmd === '-v') return void console.log(VERSION)
 
+  // Reject unknown options early.
+  const knownForCmd = KNOWN_FLAGS[cmd]
+  if (knownForCmd) {
+    for (const k of Object.keys(o)) {
+      if (k !== '_' && !knownForCmd.has(k)) throw new Error(`unknown option --${k}`)
+    }
+  }
+
   if (cmd === 'collect') {
     const ref = o.pr || (o._[0] && parsePrRef(o._[0], o.repo) ? o._[0] : null)
     if (o._[0] && !ref) throw new Error(`"${o._[0]}" is not a PR reference; for a local branch use --base <branch>`)
@@ -97,7 +112,7 @@ export function main(argv = process.argv.slice(2)) {
     console.log(`change   ${meta.number ? `${meta.repo} #${meta.number}` : `${meta.repo} ${meta.branch} (${meta.mode}, base ${meta.base.ref})`}: ${meta.title}`)
     console.log(`diff     ${s.files} files, +${s.add} −${s.del}`)
     for (const f of meta.files) console.log(`         ${f.status.padEnd(8)} ${f.path} (+${f.add} −${f.del}, ${f.hunks} hunk${f.hunks === 1 ? '' : 's'})`)
-    console.log(`intent   ${meta.body ? 'PR description' : meta.commits.length ? `${meta.commits.length} commit message(s)` : 'none stated'}${meta.linkedIssues.length ? ` + ${meta.linkedIssues.length} linked issue(s)` : ''}`)
+    console.log(`intent   ${meta.intentSource}${meta.linkedIssues.length ? ` + ${meta.linkedIssues.length} linked issue(s)` : ''}`)
     console.log(`context  ${meta.contextFiles.length ? meta.contextFiles.map((c) => c.savedAs || c.path).join(', ') : 'none found'}`)
     if (meta.config) console.log(`config   ${meta.config}`)
     if (!s.files) console.log('\nThe diff is empty: nothing to explain.')
@@ -108,7 +123,9 @@ export function main(argv = process.argv.slice(2)) {
     const dir = resolve(o._[0] || '.')
     const target = join(dir, 'explain.json')
     if (existsSync(target) && !o.force) throw new Error(`${target} exists; pass --force to overwrite`)
-    writeFileSync(target, JSON.stringify(initExplain(readJson(join(dir, 'meta.json'), 'meta.json')), null, 2) + '\n')
+    const diffPath = join(dir, 'pr.diff')
+    const diffText = existsSync(diffPath) ? readFileSync(diffPath, 'utf8') : ''
+    writeFileSync(target, JSON.stringify(initExplain(readJson(join(dir, 'meta.json'), 'meta.json'), diffText), null, 2) + '\n')
     console.log(`wrote ${target}`)
     return
   }

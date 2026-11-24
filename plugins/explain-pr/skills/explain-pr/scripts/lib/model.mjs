@@ -1,7 +1,17 @@
 // explain.json + pr.diff + meta.json → the data the page and the markdown summary read.
 // Validates everything, places every hunk of the diff in exactly one step (or a skip group),
 // and pins each note onto its line by text. Returns { data, errors, warnings }.
+import { createHash } from 'node:crypto'
 import { findFile, parseDiff, stats } from './diff.mjs'
+
+const KNOWN_EXPLAIN_KEYS = new Set(['version', 'summary', 'overview', 'kind', 'effort', 'intent', 'architecture', 'flows', 'decisions', 'attention', 'steps', 'stopped', 'skip', 'unchecked', 'diffFingerprint'])
+
+function checkForTodos(obj, path) {
+  if (typeof obj === 'string' && /^\s*TODO\b/i.test(obj)) return [`${path}: starts with TODO — fill this in`]
+  if (Array.isArray(obj)) return obj.flatMap((v, i) => checkForTodos(v, `${path}[${i}]`))
+  if (obj && typeof obj === 'object') return Object.entries(obj).flatMap(([k, v]) => checkForTodos(v, path ? `${path}.${k}` : k))
+  return []
+}
 
 export const ENUMS = {
   nodeStatus: ['added', 'removed', 'changed', 'same'],
@@ -30,9 +40,23 @@ export function buildModel(explain, diffText, meta = {}) {
   }
 
   if (!explain || typeof explain !== 'object') return { data: null, errors: ['explain.json: not a JSON object'], warnings }
+
+  // Warn on unknown top-level keys — catches misspellings like "stoped" or "decision".
+  for (const k of Object.keys(explain)) {
+    if (!KNOWN_EXPLAIN_KEYS.has(k)) warn(k, `unknown key — did you mean one of: ${[...KNOWN_EXPLAIN_KEYS].join(', ')}?`)
+  }
+
+  // Fail if the diff has changed since init ran.
+  if (explain.diffFingerprint) {
+    const currentFp = createHash('sha256').update(diffText || '').digest('hex').slice(0, 16)
+    if (explain.diffFingerprint !== currentFp) {
+      err('diffFingerprint', 'the diff has changed since init ran — re-run init and update the explanation')
+    }
+  }
+
   if (explain.version !== 1) err('version', 'must be 1')
   if (!isStr(explain.summary)) err('summary', 'required: one sentence on what changes for whoever meets this change')
-  else if (explain.summary.length > 240) warn('summary', `${explain.summary.length} characters; aim for one sentence under ~200`)
+  else if (explain.summary.length > 200) warn('summary', `${explain.summary.length} characters; aim for one sentence under ~200`)
   oneOf('kind', explain.kind, ENUMS.kind)
 
   // ---- effort
@@ -94,7 +118,7 @@ export function buildModel(explain, diffText, meta = {}) {
   const steps = arr(explain.steps).map((s, i) => {
     const p = `steps[${i}]`
     if (!isStr(s.title)) err(p + '.title', 'required')
-    else if (s.title.length > 90) warn(p + '.title', 'long; aim for under ~70 characters')
+    else if (s.title.length > 70) warn(p + '.title', 'long; aim for under ~70 characters')
     if (!isStr(s.why)) err(p + '.why', 'required')
     const out = { n: i + 1, title: s.title, why: s.why, effect: s.effect || s.consequence, pseudocode: s.pseudocode, files: [] }
     const refs = arr(s.hunks)
@@ -168,6 +192,9 @@ export function buildModel(explain, diffText, meta = {}) {
   arr(explain.attention).forEach((a, i) => {
     if (a.step && steps[a.step - 1]) (steps[a.step - 1].attention ||= []).push(i)
   })
+
+  // Reject any unfinished TODO placeholders.
+  for (const e of checkForTodos(explain, '')) errors.push(e)
 
   const data = {
     version: 1,

@@ -3,8 +3,9 @@
 //   meta.json     title, intent (PR body or commit messages), linked issues, files, context files, config
 //   context/      copies of architecture/convention docs (PR mode; local mode points at the repo's own files)
 // Read-only: it never checks out, installs or runs the code under review.
+import { createHash } from 'node:crypto'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeSync, closeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { parseDiff, stats } from './diff.mjs'
@@ -20,10 +21,46 @@ const CONTEXT_FILES = [
   '.github/copilot-instructions.md',
   'CONTRIBUTING.md',
 ]
-const CONTEXT_DIRS = ['.cursor/rules', 'docs/adr', 'docs/adrs', 'docs/decisions', 'adr']
+const CONTEXT_DIRS = ['.cursor/rules', '.claude/rules', 'docs/adr', 'docs/adrs', 'docs/decisions', 'adr']
+const INTENT_FILES = ['.agent/intent.md', '.claude/intent.md', 'TASK.md', '.task.md']
 const CONFIG_FILES = ['.explain-pr.yaml', '.explain-pr.yml', '.explain-pr.json']
 const MAX_CONTEXT = 30
 const MAX_BUFFER = 256 * 1024 * 1024
+
+// Patterns for files that look like secrets.
+const SECRET_NAME_RE = /(?:^|\/)(?:\.env(?:\..+)?|\.?id_rsa[^/]*|credentials[^/]*|[^/]*\.(?:pem|key|p12|pfx|cer|crt|tfvars))$/i
+const SECRET_CONTENT_RE = /AKIA[0-9A-Z]{16}|-----BEGIN [A-Z]+ PRIVATE KEY|sk-live-[0-9a-zA-Z]|sk-proj-[0-9a-zA-Z]/
+
+function looksLikeSecret(path) { return SECRET_NAME_RE.test(path) }
+function containsSecret(text) { return SECRET_CONTENT_RE.test(text) }
+
+// Redact secret file contents from an already-assembled diff text.
+function redactSecrets(diffText) {
+  const secretFiles = []
+  const lines = diffText.split('\n')
+  const result = []
+  let inSecretFile = false
+  let inHunk = false
+
+  for (const line of lines) {
+    if (line.startsWith('diff --git ')) { inSecretFile = false; inHunk = false }
+    if (!inSecretFile && line.startsWith('+++ b/')) {
+      const path = line.slice(6)
+      if (looksLikeSecret(path)) { inSecretFile = true; secretFiles.push(path) }
+    }
+    if (inSecretFile) {
+      if (line.startsWith('@@ ')) {
+        result.push(line)
+        result.push('+[hidden: looks like a secret — contents not shown]')
+        inHunk = true
+        continue
+      }
+      if (inHunk && (line.startsWith('+') || line.startsWith('-')) && !line.startsWith('+++') && !line.startsWith('---')) continue
+    }
+    result.push(line)
+  }
+  return { diffText: result.join('\n'), secretFiles }
+}
 
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'], ...opts })
 const tryRun = (cmd, args, opts) => {
@@ -34,6 +71,16 @@ const tryRun = (cmd, args, opts) => {
   }
 }
 const slugify = (s) => s.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'change'
+const repoHash = (root) => createHash('sha256').update(root).digest('hex').slice(0, 6)
+
+// Write a file with restricted permissions (owner-read-write only).
+const writeSecure = (p, content) => {
+  const fd = openSync(p, 'w', 0o600)
+  try {
+    if (typeof content === 'string') writeSync(fd, content, 'utf8')
+    else writeSync(fd, content)
+  } finally { closeSync(fd) }
+}
 
 // "https://github.com/o/r/pull/12", "o/r#12", "o/r/pull/12" or "12" (with --repo or the current repo's remote).
 export function parsePrRef(ref, repoHint) {
@@ -97,12 +144,26 @@ function ancestorsOf(files) {
 
 function workDirFor(out, slug) {
   const dir = out || join(process.env.EXPLAIN_PR_HOME || join(tmpdir(), 'explain-pr'), slug)
-  mkdirSync(dir, { recursive: true })
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
   return dir
 }
 
 function summarizeFiles(files) {
-  return files.map((f) => ({ path: f.path, ...(f.oldPath !== f.path && { oldPath: f.oldPath }), status: f.status, add: f.add, del: f.del, hunks: f.hunks.length, ...(f.binary && { binary: true }) }))
+  return files.map((f) => ({ path: f.path, ...(f.oldPath && f.oldPath !== f.path && { oldPath: f.oldPath }), status: f.status, add: f.add, del: f.del, hunks: f.hunks.length, ...(f.binary && { binary: true }), ...(f.oldMode && { oldMode: f.oldMode }), ...(f.newMode && { newMode: f.newMode }) }))
+}
+
+// Read a simple config file (.json or basic key: value YAML — no YAML library needed).
+function readConfig(path) {
+  try {
+    const text = readFileSync(path, 'utf8')
+    if (path.endsWith('.json')) return JSON.parse(text)
+    const cfg = {}
+    for (const line of text.split('\n')) {
+      const m = line.match(/^(\w+):\s*(.+)$/)
+      if (m) cfg[m[1]] = m[2].replace(/^['"]|['"]$/g, '').trim()
+    }
+    return cfg
+  } catch { return {} }
 }
 
 // ---------- pull request (GitHub, read-only through the REST API) ----------
@@ -111,13 +172,33 @@ export function collectPr({ ref, repo: repoHint, out }) {
   if (!p) throw new Error(`can't read "${ref}" as a pull request`)
   const base = `repos/${p.owner}/${p.repo}`
   const pr = ghJson(`${base}/pulls/${p.number}`)
-  const diff = gh(['api', `${base}/pulls/${p.number}`, '-H', 'Accept: application/vnd.github.diff'])
-  const files = parseDiff(diff)
 
-  const commits = (ghTry(`${base}/pulls/${p.number}/commits?per_page=100`) || []).map((c) => {
-    const [subject, ...rest] = (c.commit?.message || '').split('\n')
-    return { sha: c.sha.slice(0, 12), subject, body: rest.join('\n').trim() }
-  })
+  let diff
+  try {
+    diff = gh(['api', `${base}/pulls/${p.number}`, '-H', 'Accept: application/vnd.github.diff'])
+  } catch (e) {
+    if (e.message.includes('406') || e.message.toLowerCase().includes('too large')) {
+      throw new Error(`PR diff is too large for GitHub's API. Use --committed or --uncommitted on a local clone instead.`)
+    }
+    throw e
+  }
+
+  // Paginate through all commits (GitHub returns at most 100 per page).
+  const allCommits = []
+  let page = 1
+  while (true) {
+    const batch = ghTry(`${base}/pulls/${p.number}/commits?per_page=100&page=${page}`) || []
+    for (const c of batch) {
+      const [subject, ...rest] = (c.commit?.message || '').split('\n')
+      allCommits.push({ sha: c.sha.slice(0, 12), subject, body: rest.join('\n').trim() })
+    }
+    if (batch.length < 100) break
+    page++
+  }
+  const commits = allCommits
+
+  const { diffText: redacted, secretFiles } = redactSecrets(diff)
+  const files = parseDiff(redacted)
 
   const linkedIssues = []
   for (const i of linkedIssueRefs(pr.body, p.owner, p.repo)) {
@@ -129,7 +210,7 @@ export function collectPr({ ref, repo: repoHint, out }) {
   const slug = `${p.repo}-${p.number}`
   const dir = workDirFor(out, slug)
   const ctxDir = join(dir, 'context')
-  mkdirSync(ctxDir, { recursive: true })
+  mkdirSync(ctxDir, { recursive: true, mode: 0o700 })
 
   // Context docs at the PR's head, so the agent can compare the change to the conventions it was written against.
   const headSha = pr.head.sha
@@ -139,7 +220,7 @@ export function collectPr({ ref, repo: repoHint, out }) {
     const c = ghTry(`${base}/contents/${encodeURI(path)}?ref=${headSha}`)
     if (!c || Array.isArray(c) || c.type !== 'file' || !c.content) return
     const savedAs = join('context', path.replace(/\//g, '__'))
-    writeFileSync(join(dir, savedAs), Buffer.from(c.content, 'base64'))
+    writeSecure(join(dir, savedAs), Buffer.from(c.content, 'base64'))
     contextFiles.push({ path, savedAs })
   }
   for (const f of CONTEXT_FILES) fetchFile(f)
@@ -153,10 +234,12 @@ export function collectPr({ ref, repo: repoHint, out }) {
     const c = ghTry(`${base}/contents/${f}?ref=${headSha}`)
     if (c && c.content) {
       config = join('context', f)
-      writeFileSync(join(dir, config), Buffer.from(c.content, 'base64'))
+      writeSecure(join(dir, config), Buffer.from(c.content, 'base64'))
       break
     }
   }
+
+  const intentSource = pr.body ? 'PR description' : commits.length ? `${commits.length} commit message${commits.length === 1 ? '' : 's'}` : 'none'
 
   const meta = {
     version: 1,
@@ -168,20 +251,22 @@ export function collectPr({ ref, repo: repoHint, out }) {
     author: pr.user?.login,
     state: pr.merged_at ? 'merged' : pr.state,
     body: pr.body || '',
+    intentSource,
     base: { ref: pr.base.ref, sha: pr.base.sha },
     head: { ref: pr.head.ref, sha: headSha },
     commits,
     linkedIssues,
     contextFiles,
     config,
+    ...(secretFiles.length && { secretFiles }),
     stats: stats(files),
     files: summarizeFiles(files),
     workDir: dir,
     slug,
     generatedAt: new Date().toISOString(),
   }
-  writeFileSync(join(dir, 'pr.diff'), diff)
-  writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n')
+  writeSecure(join(dir, 'pr.diff'), redacted)
+  writeSecure(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n')
   return meta
 }
 
@@ -195,12 +280,19 @@ export function collectLocal({ cwd = process.cwd(), base, mode = 'branch', out }
   const branch = tryRun('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: root })?.trim() || 'HEAD'
   const headSha = tryRun('git', ['rev-parse', 'HEAD'], { cwd: root })?.trim() || null
 
-  let baseRef = base || defaultBase(root)
+  // Read config early so we can apply the base from it.
+  const configFile = CONFIG_FILES.find((f) => existsSync(join(root, f))) || null
+  const configData = configFile ? readConfig(join(root, configFile)) : {}
+
+  let baseRef = base || configData.base || defaultBase(root)
   let mergeBase = null
   if (mode !== 'uncommitted') {
     if (!baseRef) throw new Error('could not find a base branch; pass --base <branch>')
+    if (!tryRun('git', ['rev-parse', '--verify', '--quiet', baseRef], { cwd: root })) {
+      throw new Error(`branch "${baseRef}" not found`)
+    }
     mergeBase = tryRun('git', ['merge-base', baseRef, 'HEAD'], { cwd: root })?.trim()
-    if (!mergeBase) throw new Error(`no common ancestor between ${baseRef} and HEAD`)
+    if (!mergeBase) throw new Error(`no common ancestor between "${baseRef}" and HEAD`)
   }
 
   const diffArgs = ['diff', '--no-color', '--no-ext-diff', '-M']
@@ -209,14 +301,46 @@ export function collectLocal({ cwd = process.cwd(), base, mode = 'branch', out }
   else if (mode === 'uncommitted') diff = headSha ? g(...diffArgs, 'HEAD') : ''
   else diff = g(...diffArgs, mergeBase)
 
+  const secretFiles = []
+  const skippedDirs = []
+
   if (mode !== 'committed') {
-    // New files an agent created but nobody has `git add`ed yet: diff each against /dev/null without touching the index.
-    const untracked = g('ls-files', '--others', '--exclude-standard').split('\n').filter(Boolean)
+    // New files an agent created but nobody has `git add`ed yet.
+    // Use -z (NUL-separated) to handle accented and special file names correctly.
+    const untrackedRaw = run('git', ['ls-files', '--others', '--exclude-standard', '-z'], { cwd: root })
+    const untracked = untrackedRaw.split('\0').filter(Boolean)
     for (const f of untracked) {
+      const abs = join(root, f)
+      // Skip directories (e.g. nested repos that git treats as untracked dirs).
+      try {
+        if (statSync(abs).isDirectory()) {
+          skippedDirs.push(f)
+          continue
+        }
+      } catch { continue }
+
+      if (looksLikeSecret(f)) {
+        diff += `\ndiff --git a/${f} b/${f}\nnew file mode 100644\n--- /dev/null\n+++ b/${f}\n@@ -0,0 +1 @@\n+[hidden: looks like a secret — contents not shown]\n`
+        secretFiles.push(f)
+        continue
+      }
       const r = spawnSync('git', ['diff', '--no-color', '--no-index', '--', '/dev/null', f], { cwd: root, encoding: 'utf8', maxBuffer: MAX_BUFFER })
-      if (r.stdout) diff += (diff && !diff.endsWith('\n') ? '\n' : '') + r.stdout
+      if (r.stdout) {
+        if (containsSecret(r.stdout)) {
+          diff += `\ndiff --git a/${f} b/${f}\nnew file mode 100644\n--- /dev/null\n+++ b/${f}\n@@ -0,0 +1 @@\n+[hidden: contains what looks like a secret — contents not shown]\n`
+          secretFiles.push(f)
+        } else {
+          diff += (diff && !diff.endsWith('\n') ? '\n' : '') + r.stdout
+        }
+      }
     }
   }
+
+  // Redact any secret files that are part of the committed diff.
+  const { diffText: redacted, secretFiles: redactedFiles } = redactSecrets(diff)
+  diff = redacted
+  secretFiles.push(...redactedFiles)
+
   const files = parseDiff(diff)
 
   const range = mode === 'uncommitted' ? null : `${mergeBase}..HEAD`
@@ -231,6 +355,22 @@ export function collectLocal({ cwd = process.cwd(), base, mode = 'branch', out }
         })
     : []
 
+  // Find where the intent comes from.
+  let intentSource = ''
+  let intentBody = ''
+  if (commits.length) {
+    intentSource = `${commits.length} commit message${commits.length === 1 ? '' : 's'}`
+  } else {
+    for (const f of INTENT_FILES) {
+      if (existsSync(join(root, f))) {
+        intentBody = readFileSync(join(root, f), 'utf8').slice(0, 6000)
+        intentSource = f
+        break
+      }
+    }
+    if (!intentSource) intentSource = 'none'
+  }
+
   const contextFiles = []
   const consider = (p) => {
     if (contextFiles.length < MAX_CONTEXT && existsSync(join(root, p)) && statSync(join(root, p)).isFile()) contextFiles.push({ path: p })
@@ -239,13 +379,15 @@ export function collectLocal({ cwd = process.cwd(), base, mode = 'branch', out }
   for (const d of ancestorsOf(files)) for (const n of ['CLAUDE.md', 'AGENTS.md']) consider(`${d}/${n}`)
   for (const d of CONTEXT_DIRS) {
     const abs = join(root, d)
-    if (existsSync(abs) && statSync(abs).isDirectory()) for (const n of readdirSync(abs).slice(0, 10)) consider(`${d}/${n}`)
+    if (existsSync(abs) && statSync(abs).isDirectory()) {
+      for (const n of readdirSync(abs).slice(0, 10)) consider(`${d}/${n}`)
+    }
   }
-  const config = CONFIG_FILES.find((f) => existsSync(join(root, f))) || null
 
   const repoName = remoteRepo(root) || basename(root)
   const scope = mode === 'uncommitted' ? 'uncommitted' : mode === 'committed' ? `${branch}-committed` : branch
-  const slug = `${basename(repoName)}-${slugify(scope)}`
+  // Include a hash of the repo root to avoid collisions between repos with the same name + branch.
+  const slug = `${basename(repoName)}-${repoHash(root)}-${slugify(scope)}`
   const dir = workDirFor(out, slug)
   const lastCommit = commits[0]
 
@@ -257,21 +399,27 @@ export function collectLocal({ cwd = process.cwd(), base, mode = 'branch', out }
     repoRoot: root,
     branch,
     title: commits.length === 1 ? lastCommit.subject : `${branch}${baseRef && mode !== 'uncommitted' ? ` vs ${baseRef}` : ''}`,
-    body: '',
+    body: intentBody,
+    intentSource,
     base: { ref: mode === 'uncommitted' ? 'HEAD' : baseRef, sha: mode === 'uncommitted' ? headSha : mergeBase },
     head: { ref: mode === 'committed' ? branch : `${branch} (working tree)`, sha: headSha },
     commits,
     linkedIssues: [],
     contextFiles,
-    config,
+    config: configFile,
+    ...(secretFiles.length && { secretFiles }),
     stats: stats(files),
     files: summarizeFiles(files),
     workDir: dir,
     slug,
     generatedAt: new Date().toISOString(),
   }
-  writeFileSync(join(dir, 'pr.diff'), diff)
-  writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n')
+  writeSecure(join(dir, 'pr.diff'), diff)
+  writeSecure(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n')
+
+  if (skippedDirs.length) console.log(`skipped  ${skippedDirs.length} director${skippedDirs.length === 1 ? 'y' : 'ies'} (nested repo or unreadable): ${skippedDirs.join(', ')}`)
+  if (secretFiles.length) console.log(`secrets  ${secretFiles.length} file${secretFiles.length === 1 ? '' : 's'} hidden (looks like a secret): ${secretFiles.join(', ')}`)
+
   return meta
 }
 

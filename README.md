@@ -74,7 +74,7 @@ More detail: [docs/install-claude-code.md](docs/install-claude-code.md) · [docs
 
 In Claude Code the plugin command is `/explain-pr:explain-pr`; with the skill-only install it's `/explain-pr`.
 
-The page opens in any browser. In Claude it can be published as an artifact; in Cursor the agent gives you the path and can open it. Full guide, including how to add it to an agent pipeline: [docs/usage.md](docs/usage.md).
+The page opens in any browser. In Claude the agent gives you the path; it only publishes as an artifact if you ask; in Cursor the agent gives you the path and can open it. Full guide, including how to add it to an agent pipeline: [docs/usage.md](docs/usage.md).
 
 ## How it works
 

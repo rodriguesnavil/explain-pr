@@ -16,7 +16,7 @@ Plain language works too: "explain this PR", "what did the agent just change?", 
 ## What you get
 
 - **`<slug>.html`**: the page. It's self-contained (no network, ~80 KB) and opens in any browser. It follows your system's light or dark mode.
-  - **In Claude**, it is published as an artifact when possible.
+  - **In Claude**, the agent gives you the path. Ask it to open the page, or it runs `build --open`. The page is only published as an artifact if you ask.
   - **In Cursor**, the agent gives you the path; ask it to open the page, or it runs `build --open`.
 - **`<slug>.md`**: the same content as Markdown with Mermaid diagrams. Paste it into the PR description; GitHub and GitLab draw the diagrams.
 
@@ -46,7 +46,7 @@ The page's **Intent vs code** section compares the change against the commit mes
 
 ## Updating after new commits
 
-Pages are snapshots. Ask the agent to "update the explain-pr page". It re-collects into the same work folder, adjusts `explain.json` and rebuilds; in Claude it republishes to the same artifact.
+Pages are snapshots. Ask the agent to "update the explain-pr page". It re-collects into the same work folder, adjusts `explain.json` and rebuilds; in Claude it rebuilds the local file and, if you asked for an artifact earlier, republishes to the same one.
 
 ## Running the CLI yourself
 

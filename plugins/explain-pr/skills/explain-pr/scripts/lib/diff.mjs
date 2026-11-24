@@ -1,13 +1,54 @@
 // Parse a unified diff (git diff / gh pr diff output) into files and hunks.
 // Each line keeps its old and new line numbers so notes can be pinned to it.
 
-const FILE_RE = /^diff --git a\/(.*?) b\/(.*)$/
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$/
 
+// Parse "diff --git a/X b/Y" reliably even when X contains " b/".
+// For non-renames X == Y, so we find the unique split where both halves are equal.
+// Falls back to the first " b/" split when no equal-halves split exists (renames).
+function parseDiffGitPaths(line) {
+  const content = line.slice('diff --git '.length) // "a/X b/Y"
+  const candidates = []
+  let i = content.indexOf(' b/')
+  while (i !== -1) {
+    candidates.push(i)
+    i = content.indexOf(' b/', i + 1)
+  }
+  for (const pos of candidates) {
+    const a = content.slice(2, pos)
+    const b = content.slice(pos + 3)
+    if (a === b) return { oldPath: unquote(a), newPath: unquote(b) }
+  }
+  // No equal pair — take the first split (rename; headers will override anyway).
+  if (candidates.length) {
+    const pos = candidates[0]
+    return { oldPath: unquote(content.slice(2, pos)), newPath: unquote(content.slice(pos + 3)) }
+  }
+  return { oldPath: '', newPath: '' }
+}
+
+// Decode git's C-style quoted paths: octal bytes → UTF-8 string.
 const unquote = (p) => {
-  // git quotes paths with unusual characters: "a/some path"
-  if (p.startsWith('"') && p.endsWith('"')) p = p.slice(1, -1).replace(/\\(.)/g, '$1')
-  return p
+  if (!p.startsWith('"') || !p.endsWith('"')) return p
+  p = p.slice(1, -1)
+  const bytes = []
+  let i = 0
+  while (i < p.length) {
+    if (p[i] === '\\' && i + 1 < p.length) {
+      if (/[0-7]/.test(p[i + 1]) && i + 3 < p.length) {
+        bytes.push(parseInt(p.slice(i + 1, i + 4), 8))
+        i += 4
+      } else {
+        const map = { n: 10, t: 9, r: 13, '\\': 92, '"': 34 }
+        bytes.push(map[p[i + 1]] ?? p.charCodeAt(i + 1))
+        i += 2
+      }
+    } else {
+      bytes.push(p.charCodeAt(i))
+      i++
+    }
+  }
+  return Buffer.from(bytes).toString('utf8')
 }
 
 export function parseDiff(text) {
@@ -18,16 +59,16 @@ export function parseDiff(text) {
   let newNo = 0
   const lines = text.replace(/\r\n/g, '\n').split('\n')
 
-  const startFile = (oldPath, newPath) => {
+  const startFile = (line) => {
+    const { oldPath, newPath } = parseDiffGitPaths(line)
     file = { path: newPath, oldPath, status: 'modified', binary: false, add: 0, del: 0, hunks: [] }
     files.push(file)
     hunk = null
   }
 
   for (const line of lines) {
-    const fm = line.match(FILE_RE)
-    if (fm) {
-      startFile(unquote(fm[1]), unquote(fm[2]))
+    if (line.startsWith('diff --git ')) {
+      startFile(line)
       continue
     }
     if (!file) continue
@@ -36,13 +77,19 @@ export function parseDiff(text) {
       // Extended header lines before the first hunk.
       if (line.startsWith('new file mode')) file.status = 'added'
       else if (line.startsWith('deleted file mode')) file.status = 'deleted'
-      else if (line.startsWith('rename from ')) { file.oldPath = line.slice(12); file.status = 'renamed' }
-      else if (line.startsWith('rename to ')) { file.path = line.slice(10); file.status = 'renamed' }
+      else if (line.startsWith('old mode ')) file.oldMode = line.slice(9).trim()
+      else if (line.startsWith('new mode ')) file.newMode = line.slice(9).trim()
+      else if (line.startsWith('rename from ')) { file.oldPath = unquote(line.slice(12)); file.status = 'renamed' }
+      else if (line.startsWith('rename to ')) { file.path = unquote(line.slice(10)); file.status = 'renamed' }
       else if (line.startsWith('Binary files ') || line.startsWith('GIT binary patch')) file.binary = true
       else if (line.startsWith('--- ')) {
         if (line === '--- /dev/null') file.status = 'added'
+        else if (line.startsWith('--- a/')) file.oldPath = unquote(line.slice(6))
+        else file.oldPath = unquote(line.slice(4))
       } else if (line.startsWith('+++ ')) {
         if (line === '+++ /dev/null') file.status = 'deleted'
+        else if (line.startsWith('+++ b/')) file.path = unquote(line.slice(6))
+        else file.path = unquote(line.slice(4))
       }
     }
 
@@ -88,11 +135,13 @@ function hunkHasRoom(h, oldNo, newNo) {
   return oldNo < h.oldStart + h.oldCount && newNo < h.newStart + h.newCount
 }
 
-// Find a file by full path or by a unique ending of one ("api/users.ts").
+// Find a file by full path or by a unique whole-segment ending ("api/users.ts" matches "src/api/users.ts").
 export function findFile(files, ref) {
   const exact = files.find((f) => f.path === ref || f.oldPath === ref)
   if (exact) return { file: exact }
-  const ends = files.filter((f) => f.path.endsWith('/' + ref) || f.path.endsWith(ref))
+  const ends = files.filter((f) =>
+    f.path.endsWith('/' + ref) || (f.oldPath && f.oldPath.endsWith('/' + ref))
+  )
   if (ends.length === 1) return { file: ends[0] }
   if (ends.length > 1) return { error: `"${ref}" matches ${ends.length} files: ${ends.map((f) => f.path).join(', ')}` }
   return { error: `no file in the diff matches "${ref}"` }
